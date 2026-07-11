@@ -36,13 +36,20 @@ can wait for a separate sitting.
       `.obsidian/` is tracked in git, so appearance, enabled plugins, and hotkeys arrive already
       configured. Only `workspace.json` (pane layout) is machine-local by design.
 
-- [ ] **Install the Obsidian Git plugin.** Settings → Community plugins → Browse → "Git".
-      This is a GUI-only step; it can't be scripted. Configure:
-      - Auto-pull on startup: **on**
-      - Auto-commit-and-sync interval: **10 minutes**
-      - Push on auto-commit-and-sync: **on**
+- [ ] **Enable the Obsidian Git plugin.** It is *already installed* — the plugin's code is
+      tracked in this repo and `community-plugins.json` already lists it as enabled, so it comes
+      down with the clone. On first open, Obsidian will likely ask you to turn off **Restricted
+      Mode** before it will load community plugins. Do that; no download needed.
 
-      Without this you are back to pushing by hand, and the first time you forget, git writes
+- [ ] **Set the plugin's options by hand.** These do *not* sync: `.obsidian/plugins/*/data.json`
+      is deliberately gitignored, because obsidian-git can store a username/password in that file
+      and it must never reach GitHub. Match the laptop (Settings → Git):
+      - Auto commit-and-sync interval: **10** minutes
+      - Auto pull on startup: **on**
+      - Pull before push: **on**
+      - Push on commit-and-sync: **on** (i.e. leave "disable push" off)
+
+      Skipping this leaves you pushing by hand, and the first time you forget, git writes
       `<<<<<<<` conflict markers **directly into a note**. That is the whole failure mode this
       setup exists to prevent.
 
