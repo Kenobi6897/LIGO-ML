@@ -27,7 +27,7 @@ parent: "[[GW Signal Classifier - Brainstorm]]"
 
 The spine of this project is **benchmarking against matched filtering**. That's the thing that makes it more than a toy.
 
-**Matched filtering operates on the time series, *with phase*.** Its entire power comes from **coherent integration** — lining up the template's phase with the data's phase and summing. That coherence *is* what makes it optimal (see [[GW Signal Classifier - Brainstorm|the Neyman–Pearson point]]).
+**Matched filtering operates on the time series, *with phase*.** Its entire power comes from **coherent integration** — lining up the template's phase with the data's phase and summing. That coherence *is* what makes it optimal (see [[GW Signal Classifier - Brainstorm|the Neyman–Pearson point]], and [[Matched filtering explained]] for why).
 
 **A Q-transform magnitude image throws phase away.**
 

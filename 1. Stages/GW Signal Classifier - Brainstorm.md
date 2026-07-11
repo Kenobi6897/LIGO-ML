@@ -25,6 +25,8 @@ There are only a couple hundred confirmed GW events in the entire catalog. That 
 ### 2. We will not beat matched filtering — and that's a theorem, not a failure
 For a **known waveform in Gaussian noise**, matched filtering is *provably optimal* (Neyman–Pearson). There is no room above it. **If the CNN beats MF in that regime, we have a bug** — almost certainly leakage (see below).
 
+> 📖 **Full explainer: [[Matched filtering explained]]** — how it works, why whitening is half of it, why phase is the whole ballgame, and — the part that matters — **the two assumptions it rests on, which are exactly the cracks Stages 2–4 drive into.**
+
 So the benchmark needs a sharper question. The real ones:
 1. **Speed** — can the CNN approach the optimum in one forward pass, vs. convolving against a whole template bank? (This is why LIGO people actually care: latency.)
 2. **Robustness** — does the CNN degrade *more gracefully on real, glitchy, non-Gaussian noise*, where MF's optimality guarantee evaporates? ← **this is our project**
