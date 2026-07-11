@@ -1,6 +1,6 @@
 ---
 tags: [setup, ligo, machine-learning, checklist]
-status: todo
+status: in-progress
 created: 2026-07-11
 updated: 2026-07-11
 ---
@@ -20,17 +20,39 @@ means WSL2, which means CUDA passthrough. The laptop only ever needed the vault.
 Do Part 1 first — it's five minutes and gets your notes syncing. Parts 2–4 are the long pole and
 can wait for a separate sitting.
 
+> [!note] Progress — 2026-07-11, run **on the PC** (`DESKTOP-P6POAN4`)
+> The PC was not the clean slate this note assumed. Corrections, so the next reader isn't misled:
+> - **The vault was already cloned** here, clean and tracking `origin/main`. Someone started Part 1
+>   and stopped. Clone step was a no-op.
+> - **Obsidian itself was *not* installed** — this note never had a step for it, because the laptop
+>   already had it. Installed 1.12.7 via `winget install --id Obsidian.Obsidian -e`.
+>   Do **not** pass `--scope user`: the installer crashes with an access violation (`0xC0000005`).
+>   Plain flags work.
+> - **`gh` is not needed.** The note suggests it for the private-repo auth prompt, but Windows
+>   Credential Manager already had the credential — `git ls-remote` authenticated fine.
+> - **Part 2's NVIDIA-driver step is already done**: driver **596.49**, RTX 3070 detected. Part 2
+>   really starts at `wsl --install`.
+> - Still open: everything in Part 1 that needs the Obsidian GUI, and all of Parts 2–4.
+
 ---
 
 ## Part 1 — Vault sync (~5 min)
 
-- [ ] **Clone the vault.** In PowerShell:
+- [x] **Clone the vault.** In PowerShell:
       ```powershell
       cd $env:USERPROFILE\Documents
       git clone https://github.com/Kenobi6897/LIGO-ML.git
       ```
       Repo is **private** — expect a GitHub auth prompt. If `gh` is installed, `gh auth login`
       first and the clone goes through without a browser detour.
+      *Done — was already cloned at `Documents\LIGO-ML`. Credential Manager had the auth; no `gh`.*
+
+- [x] **Install Obsidian.** Not in the original checklist — the laptop already had it, the PC didn't.
+      ```powershell
+      winget install --id Obsidian.Obsidian --exact
+      ```
+      Lands at `%LOCALAPPDATA%\Programs\Obsidian\Obsidian.exe`. **Don't add `--scope user`** — the
+      installer dies with an access violation (`0xC0000005`) if you do.
 
 - [ ] **Open it as a vault.** Obsidian → *Open folder as vault* → `Documents\LIGO-ML`.
       `.obsidian/` is tracked in git, so appearance, enabled plugins, and hotkeys arrive already
@@ -53,13 +75,23 @@ can wait for a separate sitting.
       `<<<<<<<` conflict markers **directly into a note**. That is the whole failure mode this
       setup exists to prevent.
 
+      *Pre-staged on the PC:* `data.json` was written directly with those four values
+      (`autoSaveInterval: 10`, `autoPullOnBoot`, `pullBeforePush`, `disablePush: false`) — the file
+      is gitignored, so this had to be done per-machine anyway. **Still verify them in the UI**: the
+      key names were inferred, not read off a running plugin, so if Settings → Git shows defaults
+      instead, just set the four by hand as originally written.
+
 - [ ] **Verify the Claude auto-pull hook.** `.claude/settings.json` came down with the clone, so
       it's already there. Start Claude Code inside `Documents\LIGO-ML` and confirm it pulls on
       launch. If it doesn't fire, open `/hooks` once — Claude's settings watcher only tracks
       directories that had a settings file when the session began.
+      *File confirmed present on the PC; not yet observed firing, since this session started outside
+      the vault.*
 
 - [ ] **Prove the round-trip.** Edit a note on the PC, wait for auto-push, then pull on the
       laptop and confirm it lands. Do this *before* you have work worth losing.
+      *In flight: this very edit was made and pushed from the PC. If you are reading this sentence
+      on the **laptop**, the PC → laptop direction works. Laptop → PC still untested.*
 
 ---
 
@@ -70,7 +102,8 @@ can wait for a separate sitting.
 > breaks the passthrough chain — and it's the natural thing to do, because it's what you'd do on
 > real Linux. Windows driver **only**; inside WSL2, the **CUDA toolkit only**.
 
-- [ ] **Install the NVIDIA driver on Windows.** Normal GeForce driver, from Windows. Nothing special.
+- [x] **Install the NVIDIA driver on Windows.** Normal GeForce driver, from Windows. Nothing special.
+      *Done — `nvidia-smi` on Windows reports RTX 3070, driver **596.49**.*
 
 - [ ] **Install WSL2.** From an *admin* PowerShell, then reboot:
       ```powershell
