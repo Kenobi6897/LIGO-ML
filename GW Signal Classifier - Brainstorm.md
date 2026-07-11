@@ -1,0 +1,160 @@
+---
+tags: [project, ligo, machine-learning, brainstorm]
+status: planned
+created: 2026-07-11
+updated: 2026-07-11
+---
+
+# LIGO Gravitational Wave Signal Classifier
+
+## Objective
+Train a **1D CNN** to classify LIGO strain data as *gravitational wave signal* vs. *noise/glitch*, and compare it against **matched filtering**, the method physicists actually use.
+
+## Why this project
+LIGO researchers genuinely use ML for noise/signal discrimination in *detector characterization*. This is a scaled-down version of live research, not an invented exercise. It also has a well-trodden reference path — see [[#Reference papers]] — so we can check our work against known results.
+
+---
+
+## Three corrections to the original brief
+
+### 1. Injections carry the dataset, not real events
+There are only a couple hundred confirmed GW events in the entire catalog. That is not a training set — it's barely a test set.
+
+**So:** essentially all positives are **synthetic injections** (known waveforms added to real noise at varying SNR). The handful of real events (GW150914 et al.) become a small held-out **sanity check**: if the model can't fire on GW150914, it's broken. This is what the reference papers do.
+
+### 2. We will not beat matched filtering — and that's a theorem, not a failure
+For a **known waveform in Gaussian noise**, matched filtering is *provably optimal* (Neyman–Pearson). There is no room above it. **If the CNN beats MF in that regime, we have a bug** — almost certainly leakage (see below).
+
+So the benchmark needs a sharper question. The real ones:
+1. **Speed** — can the CNN approach the optimum in one forward pass, vs. convolving against a whole template bank? (This is why LIGO people actually care: latency.)
+2. **Robustness** — does the CNN degrade *more gracefully on real, glitchy, non-Gaussian noise*, where MF's optimality guarantee evaporates? ← **this is our project**
+3. **Generalization** — MF can only find what's in the template bank.
+
+### 3. `lalsuite` is Linux-only → we need WSL2
+`lalsuite` (which PyCBC needs for waveform generation) publishes **Linux wheels only, no Windows wheels**. Since injections are now load-bearing, this is a hard blocker, not an inconvenience.
+
+---
+
+## Environment (decided)
+
+**Target machine: the desktop PC — RTX 3070 (8 GB), Ryzen 7 3700X (8c/16t), 16 GB 3200 RAM.**
+*(Not the laptop: i7-1255U / Iris Xe / no CUDA. Laptop is fine for editing + Stage 0 plotting, but training happens on the PC.)*
+
+**Decision: everything in WSL2 on the PC. No Colab.** WSL2 gets **CUDA passthrough**, so we get `lalsuite` (Linux-only) *and* GPU training in one environment. That's the whole ballgame — it's the one thing the laptop couldn't do.
+
+**Why WSL2 and not a VirtualBox/VMware VM:** WSL2 *is* a VM (lightweight Hyper-V, real Linux kernel) — and crucially, it's the only one that gets the GPU. A full VM would need real PCIe passthrough (painful, typically wants a second GPU), plus static RAM carve-out and fiddly file sharing. Not close.
+
+### ⚠️ The CUDA-on-WSL2 footgun
+**NEVER install a Linux NVIDIA driver inside WSL2.** It overwrites the Windows driver stubs and breaks the passthrough chain — and it's the natural thing to do, because it's what you'd do on real Linux.
+
+- Install the NVIDIA driver on **Windows only**.
+- Inside WSL2, install the **CUDA toolkit only**, using NVIDIA's `wsl-ubuntu` packages (built to skip the driver).
+- `/usr/lib/wsl/lib/` is auto-mounted with `libcuda.so.1` / `nvidia-smi` stubs that forward through `/dev/dxg` to the real Windows driver.
+- Ref: https://docs.nvidia.com/cuda/wsl-user-guide/index.html
+
+### The real constraint is RAM, not the GPU
+The **3070 is wild overkill** for this model — a batch of 256 × 2048 floats is ~2 MB. We will not come close to 8 GB VRAM, and training runs take *minutes*. **Don't let the GPU shape the design.**
+
+**16 GB system RAM is the actual squeeze**, because WSL2 by default claims up to half the host RAM (8 GB), while the dataset is what wants memory:
+- 100k segs × 1 s × 2048 Hz × float32 ≈ **820 MB**
+- 200k segs @ 4096 Hz ≈ **3.3 GB**
+
+Two rules, applied from the start (retrofitting is annoying):
+- [ ] Cap WSL2 memory in `%UserProfile%\.wslconfig` → `memory=10GB`
+- [ ] **Store the dataset as HDF5, load lazily in `Dataset.__getitem__`** — do NOT `np.load` the whole array into RAM.
+
+### The Ryzen does more work than you'd think
+**Matched filtering is CPU-bound and embarrassingly parallel** across the template bank — as are injection generation and whitening. Stage 4 and the Stage 1 dataset build will lean on those 16 threads far harder than anything leans on the 3070.
+
+Nice side effect for the project's honesty: we're benchmarking **GPU-CNN vs. CPU-matched-filter**, which is exactly the comparison the field cares about — and with respectable hardware on *both* sides, the speed result means something instead of being an artifact of a starved baseline.
+
+### Which machine for which step?
+**Only training actually wants the 3070 — and even that's a "wants," not a "needs."** Everything else is CPU work. The split is about *iteration speed*, not capability.
+
+| Step | Needs | Laptop? |
+|---|---|---|
+| **Stage 0** — pull GW150914, whiten, bandpass, see the chirp | `gwpy` + scipy, CPU | ✅ **Yes — natively on Windows, no WSL at all** |
+| **Stage 1a** — injections, dataset build | `lalsuite` → Linux, CPU | ✅ Yes in WSL2, just slower |
+| **Stage 1b–3** — train the CNN | GPU strongly preferred | ⚠️ Works on CPU, ~10–20× slower |
+| **Stage 4** — matched-filter baseline | CPU, parallel over template bank | ✅ Yes, but the 3700X's 16 threads eat this |
+
+> **Stage 0 needs no `lalsuite`** — whitening/bandpassing GW150914 is pure gwpy/scipy, and gwpy installs fine on native Windows. No WSL, no reboot, no PC. `pip install gwpy` and see the chirp in 20 minutes.
+
+**Do NOT split the pipeline across both machines.** You *could* build the dataset on the laptop and train on the PC — but you'd shuttle a 1–3 GB HDF5 between boxes every time you change a preprocessing decision, and you **will** change preprocessing decisions constantly, because that's where the leakage bugs live. The sync tax lands on exactly the loop you iterate hardest.
+
+**Clean division:**
+- **Laptop** → Stage 0, plus all code editing/reading.
+- **PC** → Stages 1–4, one WSL2 environment. Data and model live together.
+- Code in **git** (edit anywhere); **data on the PC only**.
+
+*(Caveat: both machines have 16 GB, so the RAM squeeze + lazy-HDF5 rule applies either way — not a reason to prefer one box.)*
+
+### Setup (PC, Stages 1–4)
+```bash
+wsl --install                      # from PowerShell, then reboot
+# inside WSL2 — CUDA toolkit ONLY, no driver:
+#   follow https://docs.nvidia.com/cuda/wsl-user-guide/  (wsl-ubuntu packages)
+python3 -m venv ~/venvs/ligo && source ~/venvs/ligo/bin/activate
+pip install gwpy pycbc numpy scipy matplotlib h5py
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+(Heavyweight alternative: the official **IGWN conda distribution**, which ships gwpy/pycbc/lalsuite/bilby pre-integrated.)
+
+---
+
+## The failure mode that will actually get us
+
+**Data leakage in preprocessing.** This kills more of these projects than any modeling mistake, and it's sneaky *because it looks like success* — 99% AUC and a great mood.
+
+The mechanisms:
+- **PSD estimated from the segment itself** → a segment with a loud signal gets whitened differently than a noise segment, and the network learns *the whitening artifact*, not the chirp.
+- **Per-segment normalization to unit variance** → the injection changes the variance. Same leak.
+- **Positives and negatives drawn from different stretches of data** → the detector's noise floor drifted between them, and the network learns *the drift*.
+
+Rules that prevent it:
+- Estimate the PSD from a **separate** stretch of data.
+- Apply **identical** preprocessing to positives and negatives.
+- Build each positive by injecting into a noise segment **that could equally well have been a negative**.
+
+> **If AUC is suspiciously high, assume leakage before assuming genius.**
+
+---
+
+## Staged plan
+
+Each stage produces a result we can look at.
+
+- [ ] **Stage 0 — one evening.** WSL2 + `gwpy`. Pull GW150914, whiten + bandpass, **see the chirp with our own eyes.** Validates the environment and the preprocessing before any ML exists.
+- [ ] **Stage 1 — the MVP.** *Simulated Gaussian* noise + injections → 1D CNN → ROC as a function of injected SNR. Reproduce the Gabbard figure. Should land near matched filtering; that's the "it works" signal.
+- [ ] **Stage 2 — where it gets real.** Swap simulated noise for **real O3 noise segments**. **Expect performance to drop.** Understanding *why* is the project.
+- [ ] **Stage 3 — hard negatives.** Add Gravity Spy glitches as a negative class. Now report false-alarm rate. This is where the CNN has a genuine shot at beating MF *in practice*, because glitches are exactly what break MF's assumptions.
+- [ ] **Stage 4 — the benchmark.** Matched-filter baseline via `pycbc.filter.matched_filter`, compared **at equal false-alarm rate** — not at equal accuracy.
+
+### Metrics caveat
+FAR in GW is conventionally quoted in **events per year**, and claiming ~1/year requires an enormous background set we won't have. **Report false positives per hour of held-out noise**, and be explicit that extrapolating to per-year isn't something our test set can support. Being honest about that is more impressive than a fake number.
+
+---
+
+## Design decisions still open
+- Segment length / sample rate (e.g. 1 s @ 4096 Hz vs. downsampled to 2048).
+- Single detector (H1) or **H1 + L1 as 2-channel input**? Inter-detector coincidence is a big part of real detection.
+- Injection SNR range — how weak do we go? The interesting regime is where MF *starts to struggle*.
+- Class balance and decision threshold.
+
+## Explicitly out of scope (for now)
+- **Spectrogram + 2D CNN / YOLO-style detection.** The "YOLO-style object detection" framing refers to work on **spectrograms**, not 1D strain — don't let it pull the 1D CNN design around. A Gravity Spy multi-class glitch classifier is a fine *separate* project (easier: ships as labeled images, no injections, no lalsuite, runs natively on Windows) but it has no matched-filtering benchmark.
+- **Parameter estimation as regression** (predict chirp mass) — nice follow-on: no class imbalance, no threshold-setting, easy to eyeball.
+
+---
+
+## Reference papers
+- **Gabbard et al. 2018 — "Matching Matched Filtering with Deep Learning"** — https://arxiv.org/abs/1712.06041 — nearly a line-for-line version of this project. Our Stage 1 target.
+- **George & Huerta 2018 — "Deep Learning for Real-time GW Detection"** — https://arxiv.org/abs/1701.00008
+
+## Links
+- GWOSC — https://gwosc.org
+- gwpy — https://gwpy.github.io
+- PyCBC — https://pycbc.org
+- Gravity Spy — https://gravityspy.org
+- IGWN conda — https://computing.docs.ligo.org/conda/

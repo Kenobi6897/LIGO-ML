@@ -1,0 +1,38 @@
+# --- Obsidian: churn & machine-local state ---
+# These rewrite constantly (pane layout, scroll position, last-opened file) and are
+# per-machine by nature. Tracking them creates merge conflicts over nothing.
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.obsidian/plugins/*/data.json
+
+# Everything else in .obsidian/ IS tracked on purpose — app settings, appearance,
+# enabled plugins, hotkeys — so both machines stay configured identically.
+
+# --- Data: stays on the PC, per the brainstorm note ---
+# Datasets are 1-3 GB HDF5. GitHub rejects >100 MB files and this would bloat the
+# repo permanently even after deletion. Code in git; data on the PC only.
+*.hdf5
+*.h5
+*.npy
+*.npz
+*.pkl
+*.ckpt
+*.pt
+*.pth
+data/
+datasets/
+checkpoints/
+runs/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
