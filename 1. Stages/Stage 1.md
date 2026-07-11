@@ -1,6 +1,7 @@
 ---
 tags: [ligo, machine-learning, stage-1, plan]
-status: todo
+status: blocked
+blocked-by: "WSL2 not installed — see [[Setup - Desktop PC]] Part 2"
 created: 2026-07-11
 updated: 2026-07-11
 parent: "[[GW Signal Classifier - Brainstorm]]"

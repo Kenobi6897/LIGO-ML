@@ -20,6 +20,36 @@ means WSL2, which means CUDA passthrough. The laptop only ever needed the vault.
 Do Part 1 first — it's five minutes and gets your notes syncing. Parts 2–4 are the long pole and
 can wait for a separate sitting.
 
+> [!tip]- 👉 RESUME HERE — written 2026-07-11 on the PC, immediately before the `wsl --install` reboot
+> **Where we actually are: Part 1 is done. Part 2 has not started. Parts 3–4 untouched.**
+> [[Stage 1]] is **gated shut** — its gate was verified, not assumed, and it **fails**: no WSL2.
+>
+> **The single next action** — from an **Administrator** PowerShell, then reboot:
+> ```powershell
+> wsl --install
+> ```
+> Ubuntu prompts for a Linux username + password on first launch. `.wslconfig` (10 GB) is
+> **already written**, so the cap applies from first boot — no `wsl --shutdown` needed.
+>
+> **After the reboot, the order is:** CUDA `wsl-ubuntu` toolkit → `nvidia-smi` inside WSL →
+> Part 3 venv → `torch.cuda.is_available()` → `import lal`. When `import lal` works, the
+> [[Stage 1]] gate opens. Nothing before that point can be skipped.
+>
+> **Does WSL2 endanger the Windows boot? No.** It is not a dual-boot: no bootloader entry, no
+> partition, no boot menu. Ubuntu is a VM in a file, started on demand. The reboot only exists to
+> activate two Windows optional features (WSL + Virtual Machine Platform). *One real caveat:* those
+> features enable the Hyper-V layer, which can upset older VirtualBox/VMware and some kernel-level
+> anti-cheat games. If you run neither, you'll notice nothing.
+>
+> **Still unverified (deliberately left unticked, don't assume them):**
+> - The **Claude auto-pull hook** — the session that would have proved it started *outside* the
+>   vault (`C:\Users\locke`), so the vault's `SessionStart` hook never fired. No evidence either way.
+> - Everything in Parts 2–4.
+>
+> **Don't "fix" [[Stage 0]]'s `C:\Users\tmloc\...` paths.** They look stale but are correct: Stage 0
+> is a log of work done on the *laptop*, where that genuinely was the username. Only [[Stage 1]]'s
+> path needed correcting to `locke`, because it describes *this* PC. (Already done.)
+
 > [!note] Progress — 2026-07-11, run **on the PC** (`DESKTOP-P6POAN4`)
 > The PC was not the clean slate this note assumed. Corrections, so the next reader isn't misled:
 > - **The vault was already cloned** here, clean and tracking `origin/main`. Someone started Part 1
@@ -33,6 +63,8 @@ can wait for a separate sitting.
 > - **Part 2's NVIDIA-driver step is already done**: driver **596.49**, RTX 3070 detected. Part 2
 >   really starts at `wsl --install`.
 > - Still open: everything in Part 1 that needs the Obsidian GUI, and all of Parts 2–4.
+>
+> *Superseded later the same day — Part 1 finished and auto-sync proven. See the RESUME callout above.*
 
 > [!success] Round-trip — **PC → laptop confirmed**, 2026-07-11
 > Read back on the laptop (`THEOS-LAPTOP`): commit `1ee4a5d` arrived clean, fast-forward, no
@@ -134,6 +166,11 @@ can wait for a separate sitting.
       ```powershell
       wsl --install
       ```
+      Verified absent on the PC, 2026-07-11: `wsl --list --verbose` → *"The Windows Subsystem for
+      Linux is not installed."* **This is the sole blocker on all of [[Stage 1]].**
+      Ubuntu asks for a Linux username + password on first launch — unrelated to your Windows login.
+      *Not a dual-boot:* no bootloader entry, no partition, no boot menu. The reboot only activates
+      the WSL and Virtual Machine Platform Windows features.
 
 - [x] **Cap WSL2 memory before anything else.** The PC has 16 GB and WSL2 grabs up to half by
       default, while the dataset is what actually wants RAM. Create `%UserProfile%\.wslconfig`:
