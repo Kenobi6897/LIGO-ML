@@ -69,16 +69,17 @@ can wait for a separate sitting.
       Lands at `%LOCALAPPDATA%\Programs\Obsidian\Obsidian.exe`. **Don't add `--scope user`** — the
       installer dies with an access violation (`0xC0000005`) if you do.
 
-- [ ] **Open it as a vault.** Obsidian → *Open folder as vault* → `Documents\LIGO-ML`.
+- [x] **Open it as a vault.** Obsidian → *Open folder as vault* → `Documents\LIGO-ML`.
       `.obsidian/` is tracked in git, so appearance, enabled plugins, and hotkeys arrive already
       configured. Only `workspace.json` (pane layout) is machine-local by design.
+      *Done — Obsidian running on the PC, `workspace.json` created.*
 
-- [ ] **Enable the Obsidian Git plugin.** It is *already installed* — the plugin's code is
+- [x] **Enable the Obsidian Git plugin.** It is *already installed* — the plugin's code is
       tracked in this repo and `community-plugins.json` already lists it as enabled, so it comes
       down with the clone. On first open, Obsidian will likely ask you to turn off **Restricted
       Mode** before it will load community plugins. Do that; no download needed.
 
-- [ ] **Set the plugin's options by hand.** These do *not* sync: `.obsidian/plugins/*/data.json`
+- [x] **Set the plugin's options by hand.** These do *not* sync: `.obsidian/plugins/*/data.json`
       is deliberately gitignored, because obsidian-git can store a username/password in that file
       and it must never reach GitHub. Match the laptop (Settings → Git):
       - Auto commit-and-sync interval: **10** minutes
