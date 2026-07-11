@@ -106,8 +106,8 @@ can wait for a separate sitting.
 - [ ] **Prove the round-trip.** Edit a note on the PC, wait for auto-push, then pull on the
       laptop and confirm it lands. Do this *before* you have work worth losing.
       - [x] **PC → laptop** — `1ee4a5d` pulled clean on the laptop. ✅
-      - [ ] **Laptop → PC** — pushed from the laptop as the callout above. **Pull on the PC; if the
-            callout is there, tick this and the parent box.**
+      - [x] **Laptop → PC** — callout arrived on the PC clean (`3ee5dab`, fast-forward, no conflict
+            markers). ✅ Both manual directions now proven.
       - [ ] **Auto-sync (the one that matters)** — both directions so far were *manual* `git` via
             Claude. Prove Obsidian Git does it *unattended*: edit a note in Obsidian, don't touch
             git, wait out the 10-minute interval, and confirm it lands on the other machine.
