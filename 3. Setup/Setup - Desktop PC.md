@@ -104,15 +104,19 @@ can wait for a separate sitting.
       *File confirmed present on the PC; not yet observed firing, since this session started outside
       the vault.*
 
-- [ ] **Prove the round-trip.** Edit a note on the PC, wait for auto-push, then pull on the
+- [x] **Prove the round-trip.** Edit a note on the PC, wait for auto-push, then pull on the
       laptop and confirm it lands. Do this *before* you have work worth losing.
       - [x] **PC → laptop** — `1ee4a5d` pulled clean on the laptop. ✅
       - [x] **Laptop → PC** — callout arrived on the PC clean (`3ee5dab`, fast-forward, no conflict
             markers). ✅ Both manual directions now proven.
-      - [ ] **Auto-sync (the one that matters)** — both directions so far were *manual* `git` via
-            Claude. Prove Obsidian Git does it *unattended*: edit a note in Obsidian, don't touch
-            git, wait out the 10-minute interval, and confirm it lands on the other machine.
-            Until this passes, the plugin config below is unverified and you are syncing by hand.
+      - [x] **Auto-sync (the one that matters)** — ✅ **passed, 2026-07-11.** The edit ticking the
+            three boxes above was left deliberately uncommitted; obsidian-git picked it up on its
+            own interval and landed it as commit `69d69ae`, named **`vault backup: 2026-07-11
+            21:30:43`** — the plugin's own default message format, not a hand-written one. It
+            pushed too: `main` is level with `origin/main`. **Nobody touched git.**
+            This also retroactively validates the pre-staged `data.json`: those four keys were
+            *inferred*, not read off a running plugin, and the plugin evidently read them. They
+            are correct.
 
 ---
 
@@ -131,13 +135,15 @@ can wait for a separate sitting.
       wsl --install
       ```
 
-- [ ] **Cap WSL2 memory before anything else.** The PC has 16 GB and WSL2 grabs up to half by
+- [x] **Cap WSL2 memory before anything else.** The PC has 16 GB and WSL2 grabs up to half by
       default, while the dataset is what actually wants RAM. Create `%UserProfile%\.wslconfig`:
       ```ini
       [wsl2]
       memory=10GB
       ```
       Then `wsl --shutdown` to apply. Retrofitting this later is annoying — do it now.
+      *Done 2026-07-11 — written to `C:\Users\locke\.wslconfig` **before** `wsl --install`, so it
+      applies from WSL's first boot and no `wsl --shutdown` is needed. (Confirmed 16 GB physical.)*
 
 - [ ] **Install the CUDA toolkit inside WSL2** using NVIDIA's **`wsl-ubuntu`** packages, which are
       built to skip the driver: https://docs.nvidia.com/cuda/wsl-user-guide/index.html
@@ -199,7 +205,7 @@ decisions change constantly, because that's where the leakage bugs live.
 
 ## Done when
 
-- [ ] Notes edited on either machine show up on the other without manual git commands.
+- [x] Notes edited on either machine show up on the other without manual git commands. ✅ 2026-07-11
 - [ ] `nvidia-smi` reports the 3070 from inside WSL2.
 - [ ] `torch.cuda.is_available()` is `True`.
 - [ ] `import lal` works.

@@ -23,6 +23,19 @@ parent: "[[GW Signal Classifier - Brainstorm]]"
 ### 🚧 Gate: [[Setup - Desktop PC]] must be finished first
 Stage 1 cannot start until all four of these are true. **Verify them, don't assume them:**
 
+> [!failure] Gate checked on the PC (`DESKTOP-P6POAN4`), 2026-07-11 — **FAILS**
+> | Check | Result |
+> |---|---|
+> | RTX 3070 visible | ✅ driver 596.49 |
+> | WSL2 installed | ❌ **not installed at all** |
+> | `torch.cuda.is_available()` | ⛔ blocked on WSL2 |
+> | `import lal` | ⛔ blocked on WSL2 |
+> | `.wslconfig` 10 GB cap | ✅ written pre-install |
+>
+> **Blocker: `wsl --install` (admin PowerShell + reboot).** Everything in Parts 2–4 sits behind
+> it, and since `lalsuite` has no Windows wheels there is no version of Stage 1 that routes
+> around it. Not started.
+
 ```bash
 nvidia-smi                                              # reports RTX 3070
 python -c "import torch; print(torch.cuda.is_available())"   # True
@@ -50,7 +63,7 @@ pip install scikit-learn tqdm
 |---|---|
 | **Code** | `~/ligo-ml/` inside WSL2 — clone from git, edit from either machine |
 | **Data** | `~/ligo-data/` inside WSL2 — **never in the vault, never in git** |
-| **Notes** | the vault (Windows side). WSL2 can reach it at `/mnt/c/Users/tmloc/Documents/LIGO-ML` |
+| **Notes** | the vault (Windows side). WSL2 can reach it at `/mnt/c/Users/locke/Documents/LIGO-ML` |
 
 - [ ] `mkdir -p ~/ligo-data`
 - [ ] Port [[Stage 0]]'s `condition()` logic across — but **fix the PSD leak first** (see below).
