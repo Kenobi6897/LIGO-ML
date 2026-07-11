@@ -103,9 +103,11 @@ can wait for a separate sitting.
 - [ ] Create the venv and install the stack:
       ```bash
       python3 -m venv ~/venvs/ligo && source ~/venvs/ligo/bin/activate
-      pip install gwpy pycbc numpy scipy matplotlib h5py
+      pip install gwpy pycbc numpy scipy matplotlib h5py scikit-learn tqdm
       pip install torch --index-url https://download.pytorch.org/whl/cu124
       ```
+      (`scikit-learn` for ROC/AUC — [[Stage 1]] evaluates on ROC, *not* accuracy, so it isn't
+      optional. `tqdm` because dataset generation is a long loop and you want a progress bar.)
 
 - [ ] **Confirm PyTorch sees the GPU:**
       ```bash

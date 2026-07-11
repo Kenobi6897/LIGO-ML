@@ -138,7 +138,7 @@ Each stage produces a result we can look at.
     - Q-transform shows the textbook upward sweep (~35 → 250 Hz) cutting off at merger, in **both** detectors.
     - H1/L1 overlay lines up after shifting L1 by **+6.9 ms** and **inverting** it. That inter-detector coincidence is the argument for a **2-channel CNN input** later.
     - Correct merger GPS is **1126259462.423** (not `.4` — that puts the chirp 23 ms off-center).
-- [ ] **Stage 1 — the MVP.** *Simulated Gaussian* noise + injections → 1D CNN → ROC as a function of injected SNR. Reproduce the Gabbard figure. Should land near matched filtering; that's the "it works" signal.
+- [ ] **Stage 1 — the MVP.** *Simulated Gaussian* noise + injections → 1D CNN → ROC as a function of injected SNR. Reproduce the Gabbard figure. Should land near matched filtering; that's the "it works" signal. **Plan: [[Stage 1]]** — gated on [[Setup - Desktop PC]].
 - [ ] **Stage 2 — where it gets real.** Swap simulated noise for **real O3 noise segments**. **Expect performance to drop.** Understanding *why* is the project.
 - [ ] **Stage 3 — hard negatives.** Add Gravity Spy glitches as a negative class. Now report false-alarm rate. This is where the CNN has a genuine shot at beating MF *in practice*, because glitches are exactly what break MF's assumptions.
 - [ ] **Stage 4 — the benchmark.** Matched-filter baseline via `pycbc.filter.matched_filter`, compared **at equal false-alarm rate** — not at equal accuracy.
