@@ -20,23 +20,31 @@ means WSL2, which means CUDA passthrough. The laptop only ever needed the vault.
 Do Part 1 first — it's five minutes and gets your notes syncing. Parts 2–4 are the long pole and
 can wait for a separate sitting.
 
-> [!tip]- 👉 RESUME HERE — written 2026-07-11 on the PC, immediately before the `wsl --install` reboot
-> **Where we actually are: Part 1 is done. Part 2 has not started. Parts 3–4 untouched.**
-> [[Stage 1]] is **gated shut** — its gate was verified, not assumed, and it **fails**: no WSL2.
+> [!tip]- 👉 RESUME HERE — updated 2026-07-11 on the PC, **after** the `wsl --install` reboot
+> **Where we actually are: Part 1 is done. The reboot landed — but it left no distro.** Parts 3–4 untouched.
+> [[Stage 1]] is still **gated shut**, though the blocker has narrowed to one step.
 >
-> **The single next action** — from an **Administrator** PowerShell, then reboot:
+> **What the reboot actually achieved** (verified, not assumed — `wsl --version`):
+> - WSL **2.7.10**, kernel **6.18.33.2**, WSLg 1.0.73.2 — the platform is fully in place.
+> - `wsl -l -v` → **"no installed distributions."** There is still no Linux to run `lalsuite` in.
+>
+> So `wsl --install` installed the *platform* and stopped short of the *distribution*. The two are
+> separate things, and only the first one happened.
+>
+> **The single next action** — no reboot needed this time, the Windows features are already active:
 > ```powershell
-> wsl --install
+> wsl --install -d Ubuntu
 > ```
-> Ubuntu prompts for a Linux username + password on first launch. `.wslconfig` (10 GB) is
-> **already written**, so the cap applies from first boot — no `wsl --shutdown` needed.
+> Ubuntu prompts for a Linux username + password on first launch (unrelated to your Windows login).
+> `.wslconfig` (10 GB) is **already written**, so the cap applies from Ubuntu's first boot — no
+> `wsl --shutdown` needed.
 >
-> **After the reboot, the order is:** CUDA `wsl-ubuntu` toolkit → `nvidia-smi` inside WSL →
+> **After the distro is up, the order is:** CUDA `wsl-ubuntu` toolkit → `nvidia-smi` inside WSL →
 > Part 3 venv → `torch.cuda.is_available()` → `import lal`. When `import lal` works, the
 > [[Stage 1]] gate opens. Nothing before that point can be skipped.
 >
 > **Does WSL2 endanger the Windows boot? No.** It is not a dual-boot: no bootloader entry, no
-> partition, no boot menu. Ubuntu is a VM in a file, started on demand. The reboot only exists to
+> partition, no boot menu. Ubuntu is a VM in a file, started on demand. The reboot only existed to
 > activate two Windows optional features (WSL + Virtual Machine Platform). *One real caveat:* those
 > features enable the Hyper-V layer, which can upset older VirtualBox/VMware and some kernel-level
 > anti-cheat games. If you run neither, you'll notice nothing.
@@ -44,7 +52,7 @@ can wait for a separate sitting.
 > **Still unverified (deliberately left unticked, don't assume them):**
 > - The **Claude auto-pull hook** — the session that would have proved it started *outside* the
 >   vault (`C:\Users\locke`), so the vault's `SessionStart` hook never fired. No evidence either way.
-> - Everything in Parts 2–4.
+> - Everything in Parts 2–4 downstream of the distro.
 >
 > **Don't "fix" [[Stage 0]]'s `C:\Users\tmloc\...` paths.** They look stale but are correct: Stage 0
 > is a log of work done on the *laptop*, where that genuinely was the username. Only [[Stage 1]]'s
@@ -162,15 +170,23 @@ can wait for a separate sitting.
 - [x] **Install the NVIDIA driver on Windows.** Normal GeForce driver, from Windows. Nothing special.
       *Done — `nvidia-smi` on Windows reports RTX 3070, driver **596.49**.*
 
-- [ ] **Install WSL2.** From an *admin* PowerShell, then reboot:
+- [x] **Install the WSL2 platform.** From an *admin* PowerShell, then reboot:
       ```powershell
       wsl --install
       ```
-      Verified absent on the PC, 2026-07-11: `wsl --list --verbose` → *"The Windows Subsystem for
-      Linux is not installed."* **This is the sole blocker on all of [[Stage 1]].**
+      *Done 2026-07-11 — reboot completed. `wsl --version` reports **WSL 2.7.10**, kernel
+      **6.18.33.2**, WSLg 1.0.73.2. The Windows features are active; no further reboot is needed.*
+      *Not a dual-boot:* no bootloader entry, no partition, no boot menu.
+
+- [ ] **Install a distro.** The step above installed the *platform* but **left no distribution
+      behind** — `wsl -l -v` on the PC (2026-07-11) reports *"Windows Subsystem for Linux has no
+      installed distributions."* These are two separate things, and it is easy to read the first as
+      the second. **This is now the sole blocker on all of [[Stage 1]].**
+      ```powershell
+      wsl --install -d Ubuntu
+      ```
       Ubuntu asks for a Linux username + password on first launch — unrelated to your Windows login.
-      *Not a dual-boot:* no bootloader entry, no partition, no boot menu. The reboot only activates
-      the WSL and Virtual Machine Platform Windows features.
+      No reboot required.
 
 - [x] **Cap WSL2 memory before anything else.** The PC has 16 GB and WSL2 grabs up to half by
       default, while the dataset is what actually wants RAM. Create `%UserProfile%\.wslconfig`:

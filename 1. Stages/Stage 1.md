@@ -1,7 +1,7 @@
 ---
 tags: [ligo, machine-learning, stage-1, plan]
 status: blocked
-blocked-by: "WSL2 not installed — see [[Setup - Desktop PC]] Part 2"
+blocked-by: "No WSL2 distro — platform is installed, Ubuntu is not. See [[Setup - Desktop PC]] Part 2"
 created: 2026-07-11
 updated: 2026-07-11
 parent: "[[GW Signal Classifier - Brainstorm]]"
@@ -24,18 +24,21 @@ parent: "[[GW Signal Classifier - Brainstorm]]"
 ### 🚧 Gate: [[Setup - Desktop PC]] must be finished first
 Stage 1 cannot start until all four of these are true. **Verify them, don't assume them:**
 
-> [!failure] Gate checked on the PC (`DESKTOP-P6POAN4`), 2026-07-11 — **FAILS**
+> [!failure] Gate re-checked on the PC (`DESKTOP-P6POAN4`), 2026-07-11 (post-reboot) — **still FAILS, but the blocker has narrowed**
 > | Check | Result |
 > |---|---|
 > | RTX 3070 visible | ✅ driver 596.49 |
-> | WSL2 installed | ❌ **not installed at all** |
-> | `torch.cuda.is_available()` | ⛔ blocked on WSL2 |
-> | `import lal` | ⛔ blocked on WSL2 |
+> | WSL2 **platform** installed | ✅ **WSL 2.7.10**, kernel 6.18.33.2 — the reboot landed |
+> | WSL2 **distro** installed | ❌ **none registered** — `wsl -l -v` reports zero distributions |
+> | `torch.cuda.is_available()` | ⛔ blocked on the distro |
+> | `import lal` | ⛔ blocked on the distro |
 > | `.wslconfig` 10 GB cap | ✅ written pre-install |
 >
-> **Blocker: `wsl --install` (admin PowerShell + reboot).** Everything in Parts 2–4 sits behind
-> it, and since `lalsuite` has no Windows wheels there is no version of Stage 1 that routes
-> around it. Not started.
+> **Blocker: no Linux distro.** `wsl --install` did its job — the platform, kernel and WSLg are all
+> in place — but it left no distribution behind, so there is still nowhere to run `lalsuite`. The
+> remaining action is `wsl --install -d Ubuntu` (no reboot needed; it prompts for a Linux
+> username + password). Everything in Parts 2–4 still sits behind it, and since `lalsuite` has no
+> Windows wheels there is no version of Stage 1 that routes around it.
 
 ```bash
 nvidia-smi                                              # reports RTX 3070
