@@ -34,6 +34,21 @@ can wait for a separate sitting.
 >   really starts at `wsl --install`.
 > - Still open: everything in Part 1 that needs the Obsidian GUI, and all of Parts 2–4.
 
+> [!success] Round-trip — **PC → laptop confirmed**, 2026-07-11
+> Read back on the laptop (`THEOS-LAPTOP`): commit `1ee4a5d` arrived clean, fast-forward, no
+> conflict markers. **The PC → laptop direction works.**
+>
+> This callout was written *on the laptop* and pushed back. **If you are reading it on the PC,
+> laptop → PC works too, and the round trip is closed** — go tick the box in Part 1.
+>
+> Two things the round-trip test surfaced:
+> - **Both machines committed via Claude, not via Obsidian Git.** So this proves *git* works, not
+>   that the **auto**-sync works. The plugin settings are still unverified (see Part 1) — until
+>   you've watched Obsidian push on its own, you are still syncing by hand.
+> - **The two machines have different git identities.** The PC commits as `T. M. Locke`, the laptop
+>   as `Kenobi6897` — same email, so GitHub attributes both to you and nothing is broken. Worth
+>   knowing before you wonder who the second contributor is.
+
 ---
 
 ## Part 1 — Vault sync (~5 min)
@@ -90,8 +105,13 @@ can wait for a separate sitting.
 
 - [ ] **Prove the round-trip.** Edit a note on the PC, wait for auto-push, then pull on the
       laptop and confirm it lands. Do this *before* you have work worth losing.
-      *In flight: this very edit was made and pushed from the PC. If you are reading this sentence
-      on the **laptop**, the PC → laptop direction works. Laptop → PC still untested.*
+      - [x] **PC → laptop** — `1ee4a5d` pulled clean on the laptop. ✅
+      - [ ] **Laptop → PC** — pushed from the laptop as the callout above. **Pull on the PC; if the
+            callout is there, tick this and the parent box.**
+      - [ ] **Auto-sync (the one that matters)** — both directions so far were *manual* `git` via
+            Claude. Prove Obsidian Git does it *unattended*: edit a note in Obsidian, don't touch
+            git, wait out the 10-minute interval, and confirm it lands on the other machine.
+            Until this passes, the plugin config below is unverified and you are syncing by hand.
 
 ---
 
