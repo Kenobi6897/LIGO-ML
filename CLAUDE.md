@@ -15,7 +15,6 @@ workflow" below — it changes how you should start and end a session.
 
 - `GW Signal Classifier - Brainstorm.md` — the master planning note. Environment decisions,
   staged plan (Stage 0–4), known failure modes, reference papers. Read this first.
-- `Welcome.md` — Obsidian's default note. Disposable.
 - `.obsidian/` — Obsidian config. Tracked in git so both machines share settings.
 
 ## Obsidian conventions
