@@ -78,7 +78,16 @@ Nice side effect for the project's honesty: we're benchmarking **GPU-CNN vs. CPU
 | **Stage 1b–3** — train the CNN | GPU strongly preferred | ⚠️ Works on CPU, ~10–20× slower |
 | **Stage 4** — matched-filter baseline | CPU, parallel over template bank | ✅ Yes, but the 3700X's 16 threads eat this |
 
-> **Stage 0 needs no `lalsuite`** — whitening/bandpassing GW150914 is pure gwpy/scipy, and gwpy installs fine on native Windows. No WSL, no reboot, no PC. `pip install gwpy` and see the chirp in 20 minutes.
+> **Stage 0 needs no `lalsuite`** — whitening/bandpassing GW150914 is pure gwpy/scipy, and gwpy runs on native Windows. No WSL, no reboot, no PC. ✅ **Confirmed working on the laptop.**
+
+#### ⚠️ Windows gotcha: pin `igwn-segments==2.0.0`
+`pip install gwpy` **fails on native Windows.** gwpy pulls `igwn-segments`, pip resolves to **2.1.1** — which ships **source-only**, tries to compile a C extension, and dies on `Microsoft Visual C++ 14.0 or greater is required`.
+
+**2.0.0 has a prebuilt `cp313-win_amd64` wheel**, and gwpy only requires `>=2.0.0`. So just pin it — no 6 GB of MSVC Build Tools needed:
+```bash
+pip install "igwn-segments==2.0.0" gwpy matplotlib
+```
+*(Not an issue in WSL2 — Linux gets wheels for the current version.)*
 
 **Do NOT split the pipeline across both machines.** You *could* build the dataset on the laptop and train on the PC — but you'd shuttle a 1–3 GB HDF5 between boxes every time you change a preprocessing decision, and you **will** change preprocessing decisions constantly, because that's where the leakage bugs live. The sync tax lands on exactly the loop you iterate hardest.
 
@@ -125,7 +134,10 @@ Rules that prevent it:
 
 Each stage produces a result we can look at.
 
-- [ ] **Stage 0 — one evening.** WSL2 + `gwpy`. Pull GW150914, whiten + bandpass, **see the chirp with our own eyes.** Validates the environment and the preprocessing before any ML exists.
+- [x] **Stage 0 — DONE (2026-07-11).** ✅ Pulled GW150914, whitened, bandpassed, **saw the chirp.** Ran on the *laptop*, native Windows, no WSL. **Full write-up: [[Stage 0]].** Code: `C:\Users\tmloc\ligo-ml\stage0_gw150914.py`, plots in `stage0_outputs/`.
+    - Q-transform shows the textbook upward sweep (~35 → 250 Hz) cutting off at merger, in **both** detectors.
+    - H1/L1 overlay lines up after shifting L1 by **+6.9 ms** and **inverting** it. That inter-detector coincidence is the argument for a **2-channel CNN input** later.
+    - Correct merger GPS is **1126259462.423** (not `.4` — that puts the chirp 23 ms off-center).
 - [ ] **Stage 1 — the MVP.** *Simulated Gaussian* noise + injections → 1D CNN → ROC as a function of injected SNR. Reproduce the Gabbard figure. Should land near matched filtering; that's the "it works" signal.
 - [ ] **Stage 2 — where it gets real.** Swap simulated noise for **real O3 noise segments**. **Expect performance to drop.** Understanding *why* is the project.
 - [ ] **Stage 3 — hard negatives.** Add Gravity Spy glitches as a negative class. Now report false-alarm rate. This is where the CNN has a genuine shot at beating MF *in practice*, because glitches are exactly what break MF's assumptions.
@@ -136,14 +148,22 @@ FAR in GW is conventionally quoted in **events per year**, and claiming ~1/year 
 
 ---
 
-## Design decisions still open
+## Design decisions
+
+### ✅ Decided
+- **1D time series, not 2D spectrograms.** Full rationale: **[[1D vs 2D - decision explained]]**.
+  Short version: a 2D magnitude image **throws away phase**, which is exactly what matched filtering wins with — so a 2D-vs-MF benchmark is **confounded** and teaches us nothing. 1D keeps the comparison fair. Bonus: **a 1D conv kernel *is* a matched filter**, so the first layer becomes a **learned template bank** we can plot.
+- **2D is not discarded** — it becomes a **Stage 3 comparison arm** (glitch rejection is inherently a 2D *shape* problem). The [[Stage 0]] Q-transform code already exists, so this costs almost nothing.
+
+### Still open
 - Segment length / sample rate (e.g. 1 s @ 4096 Hz vs. downsampled to 2048).
-- Single detector (H1) or **H1 + L1 as 2-channel input**? Inter-detector coincidence is a big part of real detection.
+- Single detector (H1) or **H1 + L1 as 2-channel input**? Inter-detector coincidence is a big part of real detection — and [[Stage 0]]'s overlay plot is the evidence for it.
 - Injection SNR range — how weak do we go? The interesting regime is where MF *starts to struggle*.
 - Class balance and decision threshold.
 
 ## Explicitly out of scope (for now)
-- **Spectrogram + 2D CNN / YOLO-style detection.** The "YOLO-style object detection" framing refers to work on **spectrograms**, not 1D strain — don't let it pull the 1D CNN design around. A Gravity Spy multi-class glitch classifier is a fine *separate* project (easier: ships as labeled images, no injections, no lalsuite, runs natively on Windows) but it has no matched-filtering benchmark.
+- **2D as the *primary* architecture.** Not out of scope entirely — see [[1D vs 2D - decision explained]]; it returns as a Stage 3 comparison arm. But the "YOLO-style object detection" framing in the original brief refers to work on **spectrograms**, not 1D strain — **don't let it pull the 1D CNN design around.**
+- **A Gravity Spy multi-class glitch classifier.** A fine *separate* project (easier: ships as labeled images, no injections, no lalsuite, runs natively on Windows) — but it has no matched-filtering benchmark, so it isn't this one.
 - **Parameter estimation as regression** (predict chirp mass) — nice follow-on: no class imbalance, no threshold-setting, easy to eyeball.
 
 ---
