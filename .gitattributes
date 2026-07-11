@@ -1,0 +1,4 @@
+# Normalize line endings in the repo to LF. Without this, editing a note in Windows
+# Obsidian and then touching it from WSL2 shows up as a whole-file diff, which makes
+# every real change unreviewable and invites conflicts across the two machines.
+* text=auto eol=lf
