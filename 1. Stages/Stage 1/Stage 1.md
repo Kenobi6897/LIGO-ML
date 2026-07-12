@@ -3,7 +3,7 @@ tags: [ligo, machine-learning, stage-1, plan]
 status: in-progress
 created: 2026-07-11
 updated: 2026-07-12
-progress: "Steps 1-3 done and checked (noise, injections, conditioning). Next: Step 4, the dataset."
+progress: "Steps 1-3 done and checked. Step 4 (dataset) in progress: writer + lazy Dataset + check written, writer runs, but 2 of the check's 4 properties are RED — bit-exact rebuild, and SNR calibration. Not yet generated the real 100k."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -183,13 +183,45 @@ In the right-hand panel the two chirps (green, black-dashed) lie exactly on top 
 > [!note] The demo has to survive a hostile reading
 > The first version of this test compared against `C(h)` — the whitener applied to a **pure signal with no noise**. It "failed" the leaky whitener by a factor of 10¹⁰, which was flattering and meaningless: no detector ever produces a noiseless signal, and a per-segment whitener is undefined on one. The version above only ever feeds both operators inputs the real pipeline actually sees. It is a weaker-looking number and a much stronger claim.
 
-### ▶️ Step 4 — Write the dataset — NEXT
+### 🚧 Step 4 — Write the dataset — **IN PROGRESS**
 Per segment: generate a **4 s** noise buffer → (if positive) inject a waveform scaled to a target SNR → `condition()` → store the central **2048** samples. Positives and negatives go through the identical call.
 
-- [ ] HDF5 at `~/ligo-data/stage1.h5`, arrays `X` (N, 1, 2048) and `y` (N,)
-- [ ] **Lazy load in `Dataset.__getitem__`.** Do NOT `np.load` the whole thing into RAM — 16 GB, shared with Windows.
-- [ ] Also store **per-segment SNR** and masses — you need SNR at eval time to plot efficiency curves, and you cannot recover it later.
-- [ ] Parallelise generation with `multiprocessing` — 16 threads on the 3700X.
+**Code written, writer runs, check is red.** Three files:
+
+| file | what it is |
+|---|---|
+| `stage1_dataset.py` | the writer — `multiprocessing` over 16 workers, streams into HDF5 |
+| `stage1_data.py` | `Stage1Dataset` — the lazy torch `Dataset` the CNN will train on |
+| `stage1_dataset_check.py` | the check that can fail. **Currently failing — see below.** |
+
+- [x] HDF5 at `~/ligo-data/stage1.h5`, arrays `X` (N, 1, 2048) and `y` (N,)
+- [x] **Lazy load in `Dataset.__getitem__`.** Handle opened per-process on first read, never in `__init__` — an open h5py handle can't be pickled to a `DataLoader` worker, and one inherited across a fork is unsafe to read concurrently.
+- [x] Also store **per-segment SNR** and masses — plus `merger_pos`, the noise `seed`, and `split`. You need SNR at eval time and cannot recover it later.
+- [x] Parallelise generation with `multiprocessing` — 16 threads on the 3700X.
+- [ ] ⚠️ **Get the check green.** Two open failures.
+- [ ] Run the real 100k.
+
+**Throughput:** 19 seg/s on the smoke run → **100k is ~90 min**, not the few minutes the plan assumed. Worth a look before committing to it; ~20 s of that is per-worker warm-up (each worker recomputes `_norm()` and its PSDs).
+
+#### Two decisions this step had to make that Steps 1–3 didn't
+Both follow from the crop, and both would have been **silent** errors:
+
+1. **The merger is placed relative to the CROP, not the buffer.** `merger_pos ∈ [0.7, 0.95)` is a fraction of the 1 s window the CNN sees, so it maps to buffer sample `CROP_START + merger_pos·CROP_N`. Placing it at 0.7–0.95 of the *4 s buffer* would put the merger at ~3 s — **outside the crop.** Every "positive" would be a segment whose signal had been cropped away. It would train, and it would learn nothing.
+	- The early inspiral **is** still injected into the buffer outside the crop, deliberately. A real 1 s segment cut from a detector stream has the earlier inspiral present on either side of it, and the 0.5 s whitening filter reaches into it. We discard those samples; we don't pretend they were never there.
+2. **SNR is integrated over 30–350 Hz** — the band the CNN actually sees. `condition()` band-passes, so power outside the band is filtered away before the network is handed the segment. Step 2's check integrated from 30 Hz with **no upper cutoff**, which counts ringdown power above 350 Hz that never reaches the model — overstating the SNR of exactly the *lightest* systems, whose merger frequency is highest. The money plot's x-axis has to mean "the SNR available in the data the model is given", so `sigma` now takes `high_frequency_cutoff=350`.
+
+#### 🔴 The check is failing — two open items
+Structure passes clean (shapes, dtypes, 50/50, finite, negatives carry no waveform metadata, merger randomised, **noise seeds unique and no realisation shared across splits**, 80/10/10). The two that matter are red:
+
+**(a) Rebuild is not bit-exact.** Rebuilding a stored row from its metadata alone (seed, masses, SNR, merger position) reproduces it to `max|Δ| = 1.3×10⁻⁵`, not `0`. On a segment whose std is 1.0 that's a **relative 10⁻⁵ — far too big for float32 round-off** (~10⁻⁷). Suspicion is FFTW planning differing between a Pool worker and the main process, but **that is a guess and it has not been demonstrated.** Do not relax the tolerance to make this pass until the cause is known — a writer that shuffled rows, or a parameter that never made it into the segment, would look exactly like this.
+
+**(b) The SNR calibration check is measuring the wrong thing.** It asserted `‖C(h)‖₂ ≈ requested SNR`, and got a median **4360×** with a **6× spread** across segments. The spread is the tell: a pure scale error would be a *constant* ratio, so this is mass-dependent and the identity itself is wrong.
+	- **Why it's wrong:** `‖C(h)‖₂ = SNR` only holds for **white, unit-variance** noise. Conditioned noise here is unit-variance but **band-limited** (30–350 Hz of a 0–1024 Hz band), so its samples are correlated and the identity doesn't apply.
+	- **The fix (not yet written):** normalise against the **empirical background**. Correlate the conditioned template `C(h)` against a few hundred conditioned *negatives from the file itself* to get σ_bg, then the optimal SNR is `‖C(h)‖² / σ_bg`. Self-normalising, assumption-free, and it measures the SNR the way a detection statistic actually would. Expect it to come back ≈ requested, possibly biased high at low SNR — which would be [[#✅ Step 2 — Waveform generator + SNR scaling — `stage1_injection_check.py`|the same physics Step 2 saw]], not a bug.
+	- Conditioning the **pure waveform** to get `C(h)` is legal, and only because [[#✅ Step 3 — Condition (whiten → bandpass → crop) — `stage1_condition.py`|`condition()` is signal-blind]]. Hand a noiseless signal to `condition_leaky()` and it isn't even well-defined.
+
+> [!warning] Neither failure is cosmetic
+> **(b) makes the x-axis of the money plot unverified.** Until it's green we do not know that a segment labelled "SNR 8" contains an SNR-8 signal — and that axis is the entire result of Stage 1.
 
 ### Step 5 — The 1D CNN
 Modest architecture — this is the Gabbard-class problem, not ImageNet:
@@ -247,7 +279,7 @@ Both of these were found by Step 2's check. **Neither one crashed.** Both produc
 ### 1. `resize()` threw the merger away
 At 10–50 M☉ from 30 Hz, an `IMRPhenomD` waveform is **longer than the 1 s window** — often several seconds. The obvious `hp.resize(n)` keeps the **first** *n* samples: the quiet early inspiral. It silently discards the merger — the loudest part, and the only part the window actually sees.
 
-So `sigma()` was normalising against a waveform that wasn't in the data. Recovered SNR came back biased 0.42–0.95×, *worsening with SNR*.
+So `sigma()` was normalising against a waveform that wasn't in/ the data. Recovered SNR came back biased 0.42–0.95×, *worsening with SNR*.
 
 **Fix:** place the waveform by aligning its **amplitude peak** to the target merger time, and let the early inspiral fall off the front of the window. Compute `sigma` on the **placed snippet** — so "SNR 12" means *the SNR of the signal actually present in the segment*, which is the only definition the money plot's x-axis can be held to.
 

@@ -18,10 +18,27 @@ Four properties, each of which can fail. Two are bookkeeping; two are the ones t
 
   3. SNR CALIBRATION — THE MONEY PLOT'S X-AXIS. `condition()` is linear and signal-blind,
      so we may legally condition the *pure waveform*: the signal present in the CNN's input
-     is exactly C(h), with no noise term. Conditioned noise has unit variance and is white
-     in band, so the optimal SNR of that signal is just ||C(h)||_2. It must come back as
-     the SNR we asked for. If it doesn't, every point on the efficiency-vs-SNR curve is
-     mislabelled and the curve is fiction.
+     is exactly C(h), with no noise term. We then measure its SNR the way a detection
+     statistic actually would — against the **empirical background of this very file**:
+
+         rho = ||C(h)||^2 / sigma_bg,   sigma_bg = std over negatives of  C(h) . C(n)
+
+     and require it to come back as the SNR we asked for. If it doesn't, every point on
+     the efficiency-vs-SNR curve is mislabelled and the curve is fiction.
+
+     Why not the obvious ||C(h)||_2? Because that identity needs the conditioned noise to
+     be WHITE and UNIT-VARIANCE in the same basis, and ours is neither: condition() band-
+     passes (so the samples are correlated, not white) and then applies one global scale
+     constant (`_norm()`), which ||C(h)|| inherits and the true SNR does not. The version
+     above cancels both — numerator and denominator carry the same arbitrary scale, and
+     both see the same band. It assumes nothing about the noise we did not measure.
+
+  3b. AND THE STATISTIC HAS UNIT VARIANCE. Same background, but correlated against the
+     STORED row rather than the pure template: (C(h) . x) / sigma_bg must equal the SNR
+     from (3) plus N(0,1). Getting the unit variance back is what says sigma_bg is the
+     right normalisation — and, because a misaligned or missing signal would drive the
+     recovered value to ~0, it is also what says the row on disk really contains the
+     waveform its metadata claims, at the sample offset we think.
 
   4. NO VARIANCE LEAK BEYOND THE SIGNAL'S OWN ENERGY. A positive genuinely *does* have more
      energy than a negative — that is the signal, not a leak. But how much more is
@@ -48,7 +65,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from stage1_condition import CROP_N, condition
-from stage1_dataset import DEFAULT_OUT, build_segment, make_specs, place_in_buffer
+from stage1_dataset import DEFAULT_OUT, build_segment, in_band_sigma, make_specs, place_in_buffer
 from stage1_injection_check import make_waveform
 from stage1_noise_check import SAMPLE_RATE
 
@@ -57,16 +74,48 @@ import h5py
 OUT = Path(__file__).parent / "outputs"
 N_REPRO = 12  # rows rebuilt bit-for-bit — each one costs a full segment build
 N_SNR = 150  # rows whose SNR calibration we verify
+N_BG = 512  # negatives correlated against each template to measure sigma_bg
+            # std of a std from N samples is ~1/sqrt(2N) — 512 buys ~3%, well inside the 10% band
 
 
-def signal_only(m1: float, m2: float, merger_pos: float) -> np.ndarray:
-    """C(h): the conditioned waveform, with no noise.
+def signal_only(m1: float, m2: float, merger_pos: float, target_snr: float) -> np.ndarray:
+    """C(h): the conditioned waveform, with no noise — the exact signal term of a stored row.
 
     Legal precisely because `condition()` is signal-blind (Step 3). Feed the leaky
     whitener a noiseless signal and it is not even well-defined — which is the point.
+
+    ⚠️ THE SCALING IS NOT OPTIONAL. `build_segment` stores `noise + placed*(snr/sigma)`, and
+    condition() is linear, so the signal term of the row is C(placed * snr/sigma) — NOT
+    C(placed). Dropping the factor conditions the raw IMRPhenomD waveform at pycbc's default
+    distance, whose optimal SNR is in the *thousands*, and every SNR in this check comes back
+    ~1000x high with a mass-dependent spread (sigma depends on the masses). It did, and the
+    spread is what gave it away. Mirror `build_segment` here or the check measures a
+    different signal from the one on disk.
     """
     placed = place_in_buffer(make_waveform(float(m1), float(m2)), float(merger_pos))
-    return condition(placed)
+    scaled = placed * (float(target_snr) / in_band_sigma(placed))
+    return condition(scaled)
+
+
+def empirical_snr(t: np.ndarray, bg: np.ndarray, x: np.ndarray) -> tuple[float, float, float]:
+    """Optimal and recovered SNR of template `t`, normalised by the file's own background.
+
+    `bg` is (N_BG, CROP_N) of conditioned NEGATIVES straight off the disk. Correlating the
+    template against them at zero lag samples the detection statistic's null distribution
+    directly, so sigma_bg is measured, not assumed — which is the whole point: it needs no
+    claim about the conditioned noise being white, unit-variance, or anything else.
+
+    Zero lag, not a max over lags: we know exactly where the signal was placed, and the
+    max would import the low-SNR upward bias of [[Stage 1#Step 2]] into a check that is
+    supposed to be measuring the *scaling*, not the difficulty of finding it.
+
+    Returns (sigma_bg, rho_opt, rho_recovered):
+      rho_opt = ||t||^2 / sigma_bg  — the SNR of the signal in the CNN's input, noise-free
+      rho_rec = (t . x) / sigma_bg  — the same signal measured off the STORED row, so it is
+                                      rho_opt + N(0,1)
+    """
+    sigma_bg = float((bg @ t).std())
+    return sigma_bg, float(t @ t) / sigma_bg, float(x @ t) / sigma_bg
 
 
 def main() -> int:
@@ -159,35 +208,59 @@ def main() -> int:
               f"{attrs['dataset_seed']}")
         checks.append(("metadata reproducible from the dataset seed", specs_match, ""))
 
-        # --- 3. SNR calibration ------------------------------------------------
-        print(f"\n[3] SNR calibration on {N_SNR} positives — ||C(h)|| vs the SNR we asked for")
+        # --- 3. SNR calibration, against the file's own background ---------------
+        neg_all = np.flatnonzero(neg)
+        n_bg = min(N_BG, len(neg_all))
+        bg_rows = np.sort(rng.choice(neg_all, size=n_bg, replace=False))
+        print(f"\n[3] SNR calibration on {N_SNR} positives — background from {n_bg} negatives in the file")
+
+        # The background segments themselves. Read once: every template is correlated
+        # against the same ones, so sigma_bg differences are the template's, not the draw's.
+        bg = np.asarray(X[bg_rows, 0, :], dtype=np.float64)
+
         pos_rows = rng.choice(np.flatnonzero(pos), size=min(N_SNR, int(pos.sum())), replace=False)
-        want = snr[pos_rows]
-        got = np.empty(len(pos_rows))
-        mf = np.empty(len(pos_rows))
+        want = snr[pos_rows].astype(np.float64)
+        got = np.empty(len(pos_rows))  # rho_opt — the signal in the CNN's input
+        rec = np.empty(len(pos_rows))  # rho_rec — the same signal, off the stored row
+        sig_e = np.empty(len(pos_rows))  # ||C(h)||^2 — the signal's energy, for check 4
         for i, r in enumerate(pos_rows):
-            t = signal_only(m1[r], m2[r], merger[r])
-            got[i] = np.linalg.norm(t)
-            # Matched filter of the *stored* segment against that template: peak over lag.
-            # Unit-variance white noise in band, so this is an SNR directly.
-            x = X[r, 0]
-            mf[i] = np.abs(np.correlate(x, t / np.linalg.norm(t), mode="same")).max()
+            t = signal_only(m1[r], m2[r], merger[r], snr[r]).astype(np.float64)
+            s_bg, got[i], rec[i] = empirical_snr(t, bg, np.asarray(X[int(r), 0], dtype=np.float64))
+            sig_e[i] = got[i] * s_bg  # = ||t||^2, by definition of rho_opt
 
         ratio = got / want
         med = float(np.median(ratio))
-        snr_ok = 0.85 <= med <= 1.15 and float(np.std(ratio)) < 0.15
-        print(f"  ||C(h)|| / requested SNR:  median {med:.3f}  "
-              f"(5th-95th {np.percentile(ratio,5):.3f}-{np.percentile(ratio,95):.3f})")
+        spread = float(np.std(ratio))
+        snr_ok = 0.9 <= med <= 1.1 and spread < 0.1
+        print(f"  ||C(h)||^2 / sigma_bg,  / requested SNR:  median {med:.3f}  "
+              f"(5th-95th {np.percentile(ratio,5):.3f}-{np.percentile(ratio,95):.3f}, sd {spread:.3f})")
         print(f"  {'PASS' if snr_ok else 'FAIL'}  the x-axis of the money plot means what it says")
         checks.append(("injected SNR is calibrated in-band", snr_ok, f"median {med:.3f}x"))
 
+        # [3b] The same statistic on the stored row: rho_opt + N(0,1). Unit variance says
+        # sigma_bg is the right normalisation; the near-zero mean says the signal is really
+        # in the row, at the alignment the metadata claims. A misplaced or absent waveform
+        # would push rec -> 0 and the residual mean to -rho.
+        resid = rec - got
+        r_mean, r_std = float(resid.mean()), float(resid.std())
+        # 150 samples: the sd of the mean is ~1/sqrt(150) = 0.08, of the sd ~0.06.
+        stat_ok = abs(r_mean) < 0.25 and 0.75 < r_std < 1.3
+        print(f"  recovered - optimal:  mean {r_mean:+.3f}  sd {r_std:.3f}  "
+              f"(want 0 +- 1: the statistic has unit variance)")
+        print(f"  {'PASS' if stat_ok else 'FAIL'}  the stored row contains the signal its metadata claims")
+        checks.append(("detection statistic is unit-variance about the injected SNR", stat_ok,
+                       f"{r_mean:+.2f} +- {r_std:.2f}"))
+
         # --- 4. variance: signal energy, and nothing else -----------------------
         print("\n[4] segment variance — signal energy only, no per-segment rescale")
-        neg_rows = rng.choice(np.flatnonzero(neg), size=400, replace=False)
+        neg_rows = rng.choice(neg_all, size=min(400, len(neg_all)), replace=False)
         neg_std = np.array([X[int(r), 0].std() for r in neg_rows])
         pos_std = np.array([X[int(r), 0].std() for r in pos_rows])
-        # Predicted: var = 1 + rho^2/N for a signal of SNR rho added to unit-variance noise.
-        pred = np.sqrt(1.0 + want**2 / CROP_N)
+        # Predicted: var = 1 + ||C(h)||^2/N — unit-variance noise plus the signal's own energy,
+        # and NOT 1 + rho^2/N. Those coincide only if the conditioned noise is white, which it
+        # is not (it is band-limited, and globally rescaled); ||C(h)||^2 is measured above, so
+        # use it rather than assume it. Excess above this is a per-segment rescale — the leak.
+        pred = np.sqrt(1.0 + sig_e / CROP_N)
         excess = float(np.median(pos_std / pred))
         noise_ok = 0.9 <= float(np.median(neg_std)) <= 1.1
         var_ok = 0.9 <= excess <= 1.1
@@ -213,21 +286,24 @@ def main() -> int:
         ]:
             a.plot(t_ax, X[r, 0], lw=0.7, alpha=0.85, color=colour, label=lab)
         for r, colour in [(int(loud), "k"), (int(quiet), "tab:cyan")]:
-            a.plot(t_ax, signal_only(m1[r], m2[r], merger[r]), lw=1.4, color=colour, alpha=0.9,
-                   ls="--", label=f"C(h) alone, SNR {snr[r]:.1f}")
+            a.plot(t_ax, signal_only(m1[r], m2[r], merger[r], snr[r]), lw=1.4, color=colour,
+                   alpha=0.9, ls="--", label=f"C(h) alone, SNR {snr[r]:.1f}")
         a.set_xlabel("time [s]")
         a.set_ylabel("conditioned strain [σ]")
         a.set_title("What the CNN eats\n(the SNR-4 chirp is invisible by eye — that is the point)")
         a.legend(fontsize=7, loc="upper left")
         a.grid(alpha=0.3)
 
-        b.scatter(want, got, s=14, alpha=0.5, color="tab:blue", label="‖C(h)‖ — signal in the CNN's input")
-        b.scatter(want, mf, s=10, alpha=0.35, color="tab:orange", label="matched filter on the stored segment")
-        lim = [0, max(want.max(), mf.max()) * 1.05]
+        b.scatter(want, rec, s=12, alpha=0.35, color="tab:orange",
+                  label=f"measured off the stored row (spread {r_std:.2f}, want 1.0)")
+        b.scatter(want, got, s=14, alpha=0.6, color="tab:blue",
+                  label="‖C(h)‖²/σ_bg — signal in the CNN's input")
+        lim = [0, max(want.max(), rec.max()) * 1.05]
         b.plot(lim, lim, "k--", lw=1, label="ideal")
         b.set_xlabel("requested injected SNR (stored in `snr`)")
-        b.set_ylabel("recovered SNR")
-        b.set_title(f"The money plot's x-axis is calibrated\n‖C(h)‖ / requested = {med:.3f}× median")
+        b.set_ylabel("SNR against the file's own background")
+        b.set_title("The money plot's x-axis is calibrated\n"
+                    f"optimal / requested = {med:.3f}× median; the scatter is the noise, at unit variance")
         b.legend(fontsize=8)
         b.grid(alpha=0.3)
 
