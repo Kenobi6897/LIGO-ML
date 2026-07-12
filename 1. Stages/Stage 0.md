@@ -2,15 +2,25 @@
 tags: [ligo, machine-learning, stage-0, log]
 status: complete
 created: 2026-07-11
+updated: 2026-07-12
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
 # Stage 0 — See the Chirp
 
 **Status:** ✅ Complete, 2026-07-11
-**Machine:** laptop (i7-1255U, Iris Xe) — **native Windows, no WSL, no GPU**
-**Code:** `C:\Users\tmloc\ligo-ml\stage0_gw150914.py`
-**Outputs:** `C:\Users\tmloc\ligo-ml\stage0_outputs\`
+**Machine:** first run on the laptop (i7-1255U, Iris Xe) — **native Windows, no WSL, no GPU**
+**Code:** `4. Code/stage0/stage0_gw150914.py` — **in the repo**, runs on either machine
+**Outputs:** `4. Code/stage0/outputs/` — the three plots below, committed
+
+> [!note]- Provenance of the committed plots
+> Stage 0 was originally run on the laptop, and its code lived outside the vault at
+> `C:\Users\tmloc\ligo-ml\`, so **none of it was ever in git.** On 2026-07-12 the script was
+> brought into the repo and re-run **on the PC** (native Windows, no WSL — Stage 0 needs neither).
+> The plots below are from that PC run. Same data, same pipeline, same conclusions: GWOSC returned
+> the identical 131,072 samples @ 4096 Hz, and the chirp is where it was.
+> The `igwn-segments==2.0.0` pin was confirmed a second time — gwpy 4.0.1 installs clean on
+> native Windows with it, and cannot without it.
 
 ---
 
@@ -82,14 +92,28 @@ return band.crop(START + 1, END - 1)
 
 ## Results
 
+### Both detectors, separately
+
+![[1_chirp_per_detector.png]]
+
+Amplitude *and* frequency both climb into t=0, then cut off and ring down. That's the chirp in the raw time series — and it's only visible at all because of the whitening.
+
 ### The Q-transform is the convincing one
+
+![[3_qtransform.png]]
+
 Both detectors show the **textbook upward sweep** — energy climbing from ~35 Hz to ~250 Hz and terminating abruptly at t=0. That abrupt cutoff *is* the merger. Nothing in instrumental noise looks like that.
+
+> Look at where the two arcs *end*: L1's terminates a few ms **before** H1's. That offset is the light-travel time between the detectors, falling out of the data on its own — and it's the same 6.9 ms we have to put in by hand to make the overlay below work.
 
 > 📖 **Full explainer: [[Q-transform explained]]** — what it is, why a plain spectrogram can't do this, how to read the plot, and the 1D-vs-2D design fork it exposes.
 
 *(Two gotchas: `q_transform` runs on the **raw** strain — it whitens internally, so passing whitened data would whiten twice. And the colorbar plots **√**(normalized energy) for contrast, so displayed 0–7 = real energy 0–49.)*
 
 ### The overlay is the physics
+
+![[2_overlay.png]]
+
 To lay L1 on top of H1, two corrections are needed:
 1. **Shift L1 by +6.9 ms.** The wave hit Livingston *before* Hanford — it swept across the Earth at *c*, and the detectors are ~3000 km apart.
 2. **Invert L1.** The two detectors' arms are oriented differently, so L1's response has opposite sign.
@@ -146,13 +170,21 @@ This is the single most likely way this project silently fails.
 ---
 
 ## Reproduce
-```bash
-cd C:\Users\tmloc\ligo-ml
+From the vault root, on **either machine** — native Windows is fine, Stage 0 needs no WSL:
+```powershell
+cd "4. Code\stage0"
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements-stage0.txt
 .\.venv\Scripts\python stage0_gw150914.py
 ```
-Takes ~1 min (most of it downloading from GWOSC; `cache=True` makes reruns instant).
+Takes ~1 min (most of it downloading from GWOSC; `cache=True` makes reruns instant). Writes the
+three PNGs into `outputs/`, overwriting them.
+
+The `requirements-stage0.txt` pin of **`igwn-segments==2.0.0`** is the whole reason this installs
+at all on Windows — see [[#1. `pip install gwpy` fails on native Windows ⚠️]]. Don't "helpfully"
+unpin it.
+
+*(`.venv/` is gitignored. The plots are **not** — they're the deliverable, and they're small.)*
 
 ---
 

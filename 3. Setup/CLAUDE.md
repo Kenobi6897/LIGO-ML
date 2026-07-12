@@ -5,18 +5,35 @@ Guidance for Claude Code when working in this vault.
 
 ## What this is
 
-An **Obsidian vault**, not a codebase. It holds the notes and planning for a LIGO
-gravitational-wave signal classification project. Notes are plain Markdown; treat them
-as the source of truth for project decisions.
+An **Obsidian vault that also carries the project's code.** It is mostly notes — planning for a
+LIGO gravitational-wave signal classification project — and the notes are the source of truth for
+project decisions. But as of 2026-07-12 the stage code lives here too, under `4. Code/`.
 
 The vault is synced between **two machines via git** (laptop + desktop PC). See "Two-machine
 workflow" below — it changes how you should start and end a session.
 
 ## Layout
 
-- `GW Signal Classifier - Brainstorm.md` — the master planning note. Environment decisions,
-  staged plan (Stage 0–4), known failure modes, reference papers. Read this first.
+- `1. Stages/` — the plan and the per-stage logs.
+  - `GW Signal Classifier - Brainstorm.md` — the master planning note. Environment decisions,
+    staged plan (Stage 0–4), known failure modes, reference papers. **Read this first.**
+  - `Stage 0.md`, `Stage 1.md` — per-stage write-ups. Stage 0 is complete.
+- `2. Explained/` — standalone explainers (Q-transform, matched filtering, 1D-vs-2D).
+- `3. Setup/` — machine setup checklists, and this file.
+- `4. Code/` — **the code.** One directory per stage; each is self-contained, with its own
+  `requirements-*.txt` and a gitignored `.venv/`. Plots are committed alongside the script that
+  makes them, and embedded into the stage note with `![[plot.png]]`.
+  - `stage0/` — pure gwpy/scipy, **runs natively on Windows.** Stages 1+ will need WSL2.
 - `.obsidian/` — Obsidian config. Tracked in git so both machines share settings.
+
+## Code conventions
+
+- **Plots are deliverables and belong in git.** They're small. *Data* does not — datasets,
+  checkpoints and HDF5 stay on the PC, and `.gitignore` enforces it.
+- **Stage 0 pins `igwn-segments==2.0.0`** in its requirements. This is not cruft: without the pin,
+  `pip install gwpy` fails on native Windows trying to compile a C extension. Don't unpin it.
+- Each stage script should be runnable end-to-end from its own directory with no arguments, and
+  should overwrite its plots in place so a re-run shows up as a clean diff.
 
 ## Obsidian conventions
 
