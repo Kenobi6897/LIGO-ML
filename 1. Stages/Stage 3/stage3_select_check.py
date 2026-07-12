@@ -75,14 +75,19 @@ def main() -> int:
     results.append((f"no glitch within +-{EVENT_VETO:.0f}s of any of {len(ev)} event datasets",
                     bool((dmin >= EVENT_VETO).all()), f"closest {dmin.min():.0f}s"))
 
-    # spans cover their glitches with room for the causal PSD block, in complete blocks
+    # spans cover their glitches on the block grid: each glitch's block index k >= 1
+    # within its span, its buffer placeable inside block k, and block k complete
     covered = np.zeros(len(gps), dtype=bool)
     for a, b in spans:
-        n_blocks = int((b - a - 2 * PAD) // BLOCK_LEN)
-        block_end = a + PAD + n_blocks * BLOCK_LEN
-        m = (gps >= a + LEAD) & (gps + TAIL / 2 <= block_end)
-        covered |= m
-    results.append(("every glitch inside a span, past block 0, within complete blocks",
+        m = (gps > a) & (gps < b)
+        if not m.any():
+            continue
+        k = ((gps[m] - a - PAD) // BLOCK_LEN).astype(int)
+        p = gps[m] - a - PAD - k * BLOCK_LEN
+        n_blocks = int(round((b - a - 2 * PAD) / BLOCK_LEN))
+        ok = (k >= 1) & (p >= 2.0) & (p <= BLOCK_LEN - 2.6) & (k < n_blocks)
+        covered[np.flatnonzero(m)[ok]] = True
+    results.append(("every glitch placeable in a complete block k>=1 of a span",
                     bool(covered.all()), f"{int((~covered).sum())} uncovered"))
     results.append(("spans disjoint", bool((spans[1:, 0] >= spans[:-1, 1]).all()), "overlap"))
 

@@ -164,37 +164,41 @@ def main() -> int:
     print(f"  picked {len(picked_files)} files")
     sel = pd.concat(chosen).sort_values("gps").reset_index(drop=True)
 
-    # --- block-aligned merged spans, clipped to segments; drop the incompletable -------
-    # Extending a span's end to complete its last 512 s block can overrun the NEXT
-    # span's start (the first run of stage3_select_check.py caught exactly that), so
-    # extend-and-remerge is iterated to a fixed point before anything is written.
-    def extend(a: float, b: float) -> tuple[float, float]:
-        seg = segs[(segs[:, 0] <= a) & (segs[:, 1] > a)][0]
-        n = int(np.ceil((b - (a + PAD)) / BLOCK_LEN))
-        return a, min(a + 2 * PAD + n * BLOCK_LEN, seg[1])
-
-    spans = merged_spans(sel.gps.values)
-    while True:
-        ext = [extend(a, b) for a, b in spans]
-        merged = [list(ext[0])]
-        for a, b in ext[1:]:
-            if a < merged[-1][1]:
-                merged[-1][1] = max(merged[-1][1], b)
-            else:
-                merged.append([a, b])
-        merged = [(a, b) for a, b in merged]
-        if merged == spans:
-            break
-        spans = merged
-
-    keep = np.zeros(len(sel), dtype=bool)
-    for a, end in spans:
-        n_blocks = int((end - a - 2 * PAD) // BLOCK_LEN)  # complete blocks only
-        block_end = a + PAD + n_blocks * BLOCK_LEN
-        ok = (sel.gps >= a + LEAD) & (sel.gps + TAIL / 2 <= block_end)
-        keep |= ok.values
+    # --- spans from a PER-SEGMENT block grid --------------------------------------------
+    # Blocks live on a fixed grid anchored to each science segment: seg_start + PAD +
+    # k*BLOCK_LEN. Each glitch needs exactly two grid blocks — the one holding its
+    # buffer (k) and its causal PSD source (k-1) — so the fetch list is the union of
+    # those, grouped into runs of consecutive blocks. No end-rounding, no feedback:
+    # two earlier versions of this section respectively broke span disjointness and
+    # cascaded 56 h of need into 214 h of downloads.
+    seg_start = sel.seg_start.values
+    p_in_seg = sel.gps.values - (seg_start + PAD)
+    k = (p_in_seg // BLOCK_LEN).astype(int)
+    p_in_block = p_in_seg - k * BLOCK_LEN
+    # placeable: the whole 4 s buffer (glitch at 0.1-0.95 of the crop) fits in block k,
+    # k >= 1 so the causal PSD block exists, and block k is COMPLETE inside the science
+    # segment (a glitch near segment end lives in a partial block no fetch can finish)
+    block_complete = (seg_start + PAD + (k + 1) * BLOCK_LEN + PAD) <= sel.seg_end.values
+    keep = (k >= 1) & (p_in_block >= 2.0) & (p_in_block <= BLOCK_LEN - 2.6) & block_complete
     dropped = int((~keep).sum())
     sel = sel[keep].reset_index(drop=True)
+    seg_start, k = seg_start[keep], k[keep]
+
+    needed = sorted({(s, b) for s, kk in zip(seg_start, k) for b in (kk - 1, kk)})
+    spans = []
+    run = [needed[0]]
+    for s, b in needed[1:]:
+        if s == run[-1][0] and b == run[-1][1] + 1:
+            run.append((s, b))
+        else:
+            spans.append(run)
+            run = [(s, b)]
+    spans.append(run)
+    spans = [
+        (s0 + PAD + r[0][1] * BLOCK_LEN - PAD, s0 + PAD + (r[-1][1] + 1) * BLOCK_LEN + PAD)
+        for r in spans
+        for s0 in (r[0][0],)
+    ]
 
     hours = sum(b - a for a, b in spans) / 3600.0
     files = len({int(t // 4096) for a, b in spans for t in np.arange(a, b, 2048)})
