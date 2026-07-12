@@ -52,6 +52,7 @@ MIN_CONF = 0.9
 MIN_CLASS = 150
 TARGET_PER_CLASS = 400  # enough for per-class FA statistics with room to train
 DROP_CLASSES = ("No_Glitch", "None_of_the_Above", "Chirp")
+DEDUP_S = 2.0  # triggers closer than this are one physical event; keep max confidence
 MAX_FILES = 200         # download budget: unique 4096 s GWOSC files (~1.2 min each) —
                         # THE binding constraint; download time is what we are rationing
 MAX_SPAN_HOURS = 40.0   # safety cap on stored strain (~2.7 GB); storms are span-heavy
@@ -94,6 +95,17 @@ def main() -> int:
     counts = df.ml_label.value_counts()
     df = df[df.ml_label.isin(counts[counts >= MIN_CLASS].index)]
     print(f"{len(df):,} after confidence/class filters ({df.ml_label.nunique()} classes)")
+
+    # DEDUPLICATE: the CSV lists the same physical trigger many times (near-identical
+    # peak_times) — the first build discovered this as 1,777 offset collisions out of
+    # 2,991 "selected glitches". Cluster within DEDUP_S, keep the highest confidence,
+    # class-agnostic: one time, one specimen.
+    df = df.sort_values("gps").reset_index(drop=True)
+    cluster_id = np.concatenate([[0], np.cumsum(np.diff(df.gps.values) > DEDUP_S)])
+    df["cluster"] = cluster_id
+    df = df.loc[df.groupby("cluster").ml_confidence.idxmax()].drop(columns="cluster")
+    df = df.reset_index(drop=True)
+    print(f"{len(df):,} after deduplication (clusters within {DEDUP_S}s collapsed)")
 
     # --- GWOSC metadata: science segments + event veto (independent of Stage 2's) -----
     from gwosc.datasets import event_gps, find_datasets

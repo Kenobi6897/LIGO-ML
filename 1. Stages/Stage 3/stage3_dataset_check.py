@@ -70,9 +70,11 @@ def main() -> int:
     uniq = len(np.unique(block.astype(np.int64) * 100_000 + offset)) == n
     results.append(("(block, offset) unique", uniq, "duplicate crops"))
     results.append(("glitch rows are negatives", bool((y[isg == 1] == 0).all()), "a glitch marked positive"))
-    pos_ok = bool(((gpos[isg == 1] >= GLITCH_POS_RANGE[0])
-                   & (gpos[isg == 1] < GLITCH_POS_RANGE[1])).all())
-    results.append((f"glitch positions in U{GLITCH_POS_RANGE}", pos_ok, "out of range"))
+    gp = gpos[isg == 1]
+    pos_ok = bool(((gp >= 0.02) & (gp < 0.99)).all())
+    in_primary = float(((gp >= GLITCH_POS_RANGE[0]) & (gp < GLITCH_POS_RANGE[1])).mean())
+    results.append((f"glitch positions in [0.02, 0.99) ({in_primary:.0%} in primary "
+                    f"U{GLITCH_POS_RANGE})", pos_ok and in_primary > 0.7, "out of range"))
     overlap = float((gpos[isg == 1] >= 0.70).mean())
     results.append((f"glitch/injection position ranges overlap ({overlap:.0%} of glitches at >=0.70)",
                     overlap > 0.15, "position could become the label"))
@@ -82,12 +84,17 @@ def main() -> int:
                         f"({int(y[m].sum())})", isg[m].sum() >= 50 and y[m].sum() >= 200,
                         "starved split"))
 
-    # splits time-ordered at block level
-    btr = block[split == 0]
-    bva = block[split == 1]
-    bte = block[split == 2]
-    ordered = btr.max() < bva.min() and bva.max() < bte.min()
-    results.append(("splits time-ordered by block", bool(ordered), "interleaved"))
+    # splits are BLOCK-DISJOINT (class-stratified, deliberately not time-ordered — see
+    # stage3_dataset.py) and every class is measurable: >= 20 test rows or all-in-test
+    disjoint = all(len({int(s) for s in split[block == b]}) == 1 for b in np.unique(block))
+    results.append(("each block lives in exactly one split", disjoint, "a block straddles splits"))
+    starved = []
+    for li, nm in enumerate(labels):
+        m = (isg == 1) & (glab == li)
+        if m.sum() and (isg[(split == 2)] & (glab[split == 2] == li)).sum() < min(20, m.sum()):
+            starved.append(nm)
+    results.append(("every class measurable on test (>= 20 rows or everything it has)",
+                    not starved, f"starved: {starved}"))
 
     # --- bit-exact rebuild ----------------------------------------------------------------
     rows = rng.choice(n, size=min(N_REBUILD, n), replace=False)

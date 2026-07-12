@@ -58,23 +58,30 @@ from stage3_fetch import DEFAULT_OUT as STRAIN_H5, plan_blocks
 from stage3_select import CSV, DEFAULT_OUT as SELECTION_H5
 
 DEFAULT_OUT = Path.home() / "ligo-data" / "stage3.h5"
-SPLITS = (0.8, 0.1, 0.1)
+SPLITS = (0.6, 0.1, 0.3)  # test-heavy: the per-class FA table lives on test statistics
 DATASET_SEED = 20260713
 GLITCH_POS_RANGE = (0.10, 0.95)
-CLEAN_MARGIN = 3.0  # s each side of a crop that must be trigger-free to count as clean
+# +-1 s: a trigger a second OUTSIDE the crop is the reality every real search injects
+# into. The first build used +-3 s and starved storm blocks of clean crops so badly the
+# balancing trimmed 74% of all glitch rows (2,991 -> 780).
+CLEAN_MARGIN = 1.0
 WRITE_BLOCK = 512
 
 
 def glitch_offset(p: float, rng) -> tuple[int, float] | None:
     """Integer buffer offset placing peak-position p (s into the block) at a crop
-    fraction inside GLITCH_POS_RANGE. Returns (offset, fraction) or None."""
-    lo, hi = GLITCH_POS_RANGE
-    cands = [o for o in range(int(np.floor(p - 1.5 - hi)), int(np.floor(p - 1.5 - lo)) + 1)
-             if 0 <= o <= int(BLOCK_LEN - 4) and lo <= p - 1.5 - o < hi]
-    if not cands:
-        return None
-    o = int(rng.choice(cands))
-    return o, p - 1.5 - o
+    fraction inside GLITCH_POS_RANGE. Returns (offset, fraction) or None.
+
+    The preferred range's width (0.85 s) misses an integer offset for ~15% of peak
+    positions; those fall back to a slightly wider window rather than being dropped.
+    """
+    for lo, hi in (GLITCH_POS_RANGE, (0.02, 0.99)):
+        cands = [o for o in range(int(np.floor(p - 1.5 - hi)), int(np.floor(p - 1.5 - lo)) + 1)
+                 if 0 <= o <= int(BLOCK_LEN - 4) and lo <= p - 1.5 - o < hi]
+        if cands:
+            o = int(rng.choice(cands))
+            return o, p - 1.5 - o
+    return None
 
 
 def make_specs(seed: int):
@@ -144,17 +151,34 @@ def make_specs(seed: int):
             rows.append((0, r, o, 0.0, 0.0, 0.0, 0.0, 0, -1, 0.0, 0.0, 0.0))
         rows.extend(glitch_rows)
 
-    # time order (rows grouped by block already, blocks in gps order via plan order)
     names = "label,block,offset,m1,m2,snr,merger_pos,is_glitch,glitch_label,glitch_gps,glitch_pos,glitch_snr"
     rec = np.rec.fromrecords(rows, names=names)
 
-    # block-level time-ordered splits over the data blocks that actually contributed
-    used_blocks = np.unique(rec.block)
-    n_tr = int(SPLITS[0] * len(used_blocks))
-    n_va = int(SPLITS[1] * len(used_blocks))
-    split_of = {int(b): (0 if i < n_tr else 1 if i < n_tr + n_va else 2)
-                for i, b in enumerate(used_blocks)}
-    split = np.array([split_of[int(b)] for b in rec.block], dtype=np.int8)
+    # CLASS-STRATIFIED block splits — deliberately NOT time-ordered, and said out loud:
+    # glitch classes cluster in time (storms), so a time-ordered split gave one class 0
+    # training rows and 84 test rows, another 139/0/1. The glitch benchmark is a
+    # population census, not a stream test — Stage 2's time-ordered split remains the
+    # deployment guard. Block-level disjointness (no shared raw samples) still holds.
+    # Rarest classes assign their blocks first; a block's assignment is final, so
+    # multi-class blocks inherit the rarest class's stratification.
+    rng2 = np.random.default_rng(seed + 1)
+    g = rec[rec.is_glitch == 1]
+    assign: dict[int, int] = {}
+    class_counts = {li: int((g.glitch_label == li).sum()) for li in set(g.glitch_label)}
+    for li in sorted(class_counts, key=class_counts.get):
+        blks = [int(b) for b in np.unique(g.block[g.glitch_label == li]) if int(b) not in assign]
+        if not blks:
+            continue
+        rng2.shuffle(blks)
+        n = len(blks)
+        if n == 1:
+            assign[blks[0]] = 2  # unmeasurable is worse than untrainable
+            continue
+        n_te = max(1, round(SPLITS[2] * n))
+        n_va = round(SPLITS[1] * n)
+        for i, b in enumerate(blks):
+            assign[b] = 2 if i < n_te else (1 if i < n_te + n_va else 0)
+    split = np.array([assign[int(b)] for b in rec.block], dtype=np.int8)
     return rec, split, labels, bgps
 
 
