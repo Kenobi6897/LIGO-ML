@@ -88,15 +88,22 @@ def main() -> int:
     print(f"  signal response disagreement across noises: {rel:.1e}  (machine precision ~1e-15)")
 
     # --- 2 + 3. whitening quality + scale transfer, on the LATEST blocks -------------
+    # Per-CROP stds, and a MEDIAN-based gate. The first run of this check used the
+    # pooled std and FAILED at 5.0 — which turned out to be two real glitches (one
+    # 263-sigma-std crop at GPS 1238343793, one at 32) sitting in otherwise perfectly
+    # calibrated blocks (median crop std 0.993 across all 197). Real O3 data contains
+    # monsters; they are Stage 2's subject matter, not a calibration error. So the
+    # CALIBRATION gate is robust to them, and the monsters are REPORTED separately
+    # below as a measured glitch rate.
     far = [int(r) for r in rows[-8:]]
-    crops, stds = [], []
+    crops, crop_stds = [], []
     for r in far:
         xs = np.stack([condition_real(raw_buffer(r, off), r)
                        for off in range(0, N_BUFFERS_PER_BLOCK, 8)])
         crops.append(xs)
-        stds.append(float(xs.std()))
+        crop_stds.append(xs.std(axis=1))
     real = np.concatenate([c.ravel() for c in crops])
-    stds = np.array(stds)
+    crop_stds = np.concatenate(crop_stds)
 
     from scipy.signal import welch as scipy_welch
 
@@ -110,12 +117,21 @@ def main() -> int:
                     0.6 < tilt < 1.6, f"high/low-third tilt {tilt:.2f}"))
     print(f"  in-band tilt (upper third / lower third): {tilt:.2f}  (want ~1)")
 
-    drift = float(stds.mean())
-    results.append((f"global scale transfers to the last blocks (std {drift:.3f})",
+    drift = float(np.median(crop_stds))
+    results.append((f"global scale transfers to the last blocks (median crop std {drift:.3f})",
                     0.75 < drift < 1.30,
-                    f"per-block std {stds.min():.2f}-{stds.max():.2f}"))
-    print(f"  std of conditioned noise, last blocks: mean {drift:.3f}, "
-          f"range {stds.min():.3f}-{stds.max():.3f}  (norm came from the FIRST blocks)")
+                    f"5-95% {np.percentile(crop_stds,5):.2f}-{np.percentile(crop_stds,95):.2f}"))
+    print(f"  crop std, last blocks: median {drift:.3f} "
+          f"(5-95% {np.percentile(crop_stds,5):.3f}-{np.percentile(crop_stds,95):.3f}, "
+          f"max {crop_stds.max():.1f})  (norm came from the FIRST blocks)")
+
+    # The monsters, measured not hidden: how often does a 1 s crop of conditioned real
+    # noise carry a transient loud enough to double its std? This is the glitch rate
+    # the Stage 1 model has never met, per hour, from the sampled crops.
+    n_loud = int((crop_stds > 2.0).sum())
+    hours_sampled = len(crop_stds) / 3600.0
+    print(f"  glitchy crops (std > 2): {n_loud}/{len(crop_stds)} sampled "
+          f"= {n_loud / hours_sampled:.0f}/h of real noise, loudest std {crop_stds.max():.0f}")
 
     # --- 4. non-Gaussianity, against conditioned SIMULATED noise ---------------------
     sim = np.concatenate([sim_condition(generate_noise(4.0, seed=700_000 + i)).ravel()
@@ -126,13 +142,18 @@ def main() -> int:
         kurt = float(np.mean(z**4) - 3.0)
         return kurt, float(np.mean(np.abs(z) > 4)), float(np.mean(np.abs(z) > 5))
 
+    # "Bulk" excludes the glitchy crops (std > 2), so the two rows separate the two
+    # distinct non-Gaussian phenomena: fat tails everywhere, and rare monsters.
+    bulk = np.concatenate([c[c.std(axis=1) <= 2.0].ravel() for c in crops])
     rk, r4, r5 = stats(real)
+    bk, b4, b5 = stats(bulk)
     sk, s4, s5 = stats(sim)
     print("\n  non-Gaussianity (the stage's thesis, at the data level):")
-    print(f"    {'':>24} {'excess kurtosis':>16} {'P(|x|>4)':>12} {'P(|x|>5)':>12}")
-    print(f"    {'Gaussian prediction':>24} {0.0:>16.3f} {GAUSS_TAILS[4]:>12.2e} {GAUSS_TAILS[5]:>12.2e}")
-    print(f"    {'conditioned SIMULATED':>24} {sk:>16.3f} {s4:>12.2e} {s5:>12.2e}")
-    print(f"    {'conditioned REAL O3':>24} {rk:>16.3f} {r4:>12.2e} {r5:>12.2e}")
+    print(f"    {'':>26} {'excess kurtosis':>16} {'P(|x|>4)':>12} {'P(|x|>5)':>12}")
+    print(f"    {'Gaussian prediction':>26} {0.0:>16.3f} {GAUSS_TAILS[4]:>12.2e} {GAUSS_TAILS[5]:>12.2e}")
+    print(f"    {'conditioned SIMULATED':>26} {sk:>16.3f} {s4:>12.2e} {s5:>12.2e}")
+    print(f"    {'REAL O3, bulk (no glitch)':>26} {bk:>16.3f} {b4:>12.2e} {b5:>12.2e}")
+    print(f"    {'REAL O3, everything':>26} {rk:>16.3f} {r4:>12.2e} {r5:>12.2e}")
 
     # --- figure ----------------------------------------------------------------------
     fig, (axp, axh) = plt.subplots(1, 2, figsize=(13.5, 5))
@@ -147,9 +168,10 @@ def main() -> int:
     axp.grid(alpha=0.3, which="both")
 
     bins = np.linspace(-8, 8, 161)
-    axh.hist((real - real.mean()) / real.std(), bins=bins, density=True, log=True,
+    axh.hist((bulk - bulk.mean()) / bulk.std(), bins=bins, density=True, log=True,
              histtype="step", lw=1.4, color="tab:red",
-             label=f"real O3, kurt {rk:+.2f}")
+             label=f"real O3 bulk, kurt {bk:+.2f} (glitches off-scale: worst crop std "
+                   f"{crop_stds.max():.0f})")
     axh.hist((sim - sim.mean()) / sim.std(), bins=bins, density=True, log=True,
              histtype="step", lw=1.4, color="tab:blue",
              label=f"simulated, kurt {sk:+.2f}")

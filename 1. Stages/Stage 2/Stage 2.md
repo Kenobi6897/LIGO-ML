@@ -3,7 +3,7 @@ tags: [ligo, machine-learning, stage-2, plan]
 status: in-progress
 created: 2026-07-12
 updated: 2026-07-12
-progress: "2026-07-12 — decisions pinned; Steps 1-3 code written and ALL CHECKS GREEN on a 4-block smoke run against real O3 data (signal-blindness 4.7e-16, bit-exact rebuild 0.000e+00, SNR calibration 0.996). Full ~28 h fetch running in the background. Steps 4-6 next."
+progress: "2026-07-12 — Steps 1-2 DONE on the full 29.7 h fetch (all checks green; glitch rate measured at ~28/h, worst crop std 263 — investigated, kept, check made robust). Step 3's ~100k build running. Steps 4-6 code ready."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -80,37 +80,53 @@ python stage2_fetch.py
 > Real data adds new silent failure modes (gaps, glitches in the PSD stretch, non-stationarity),
 > so if anything the checks matter more here.
 
-### 🟡 Step 1 — Fetch real O3 noise — `stage2_fetch.py` + `stage2_fetch_check.py`
-**Code done, smoke-green; the full ~28 h download is running.** GWOSC probe (2026-07-12):
-236.8 h of H1 science time in O3a's first 14 days, 6 distinct catalog events to veto,
-fetch rate ≈ one 4096 s file/min → the full pull is a ~40–70 min background job. The
-fetcher is **resumable** (`n_done` attr, atomic per-group writes) and fetches every group
-with 8 s of padding so the resample FIR's edge transient never lands inside a stored block.
+### ✅ Step 1 — Fetch real O3 noise — `stage2_fetch.py` + `stage2_fetch_check.py`
+**DONE — 209 blocks (197 data + 12 PSD-source), 1.75 GB, 29.7 h of H1 O3a.** The download
+survived a GWOSC read-timeout at block 203/209 precisely because the fetcher is
+**resumable** (`n_done` attr, atomic per-group writes); a retry finished the last 6 blocks
+in 42 s. Every group is fetched with 8 s of padding so the resample FIR's edge transient
+never lands inside a stored block.
 - [x] Query `H1_DATA` science segments from O3a start; veto ±128 s around every catalog event
-- [ ] Download in time order until ~197 data blocks exist; resample 4096 → 2048 Hz *(running)*
+      (one event in the final span: GW190403_051519)
+- [x] Download in time order until ~197 data blocks exist; resample 4096 → 2048 Hz
 - [x] Store per-block strain in `stage2_strain.h5` (float64 — conditioning stays in doubles)
-- [x] **Check:** no NaNs/gaps, veto respected, every block inside a science segment; measured
-      O3 ASD plotted against `aLIGOZeroDetHighPower` — *the premise of the stage, visible*.
-      **All 6 checks PASS on the smoke file** (4 data blocks); re-run on the full file when
-      the download lands.
+- [x] **Check: all 6 PASS on the full file** — no NaNs/gaps, veto respected (re-derived from
+      GWOSC, not trusted from the fetcher), every block inside a science segment, blocks
+      disjoint, every stretch leads with a PSD block. The ASD figure shows the premise:
+      real O3 H1 is not the design curve, and it moves between blocks.
 
 ![[1_fetch_check.png]]
 
-### 🟡 Step 2 — Condition real noise — `stage2_condition.py` + `stage2_condition_check.py`
+### ✅ Step 2 — Condition real noise — `stage2_condition.py` + `stage2_condition_check.py`
 Port of [[Stage 1]]'s `condition()` with the design PSD replaced by the block's causal Welch
 PSD (median-averaged — one glitch in the PSD block can't drag the spectrum; interpolated to
 the buffer's Δf, 0.5 s inverse-spectrum truncation, 30–350 Hz zero-phase FIRs, central 1 s
-crop, one global scale). **Code done; all 3 checks PASS on the smoke file** — re-run on the
-full file before the real dataset build.
+crop, one global scale). **DONE — all 3 checks PASS on the full 197-block file.**
 - [x] **Check — signal-blindness:** `C(n₁+h) − C(n₁) == C(n₂+h) − C(n₂)` to machine precision
-      within a block — **measured 4.7×10⁻¹⁶ on real O3 noise.** The measured-PSD conditioner
+      within a block — **measured 2.4×10⁻¹⁶ on real O3 noise.** The measured-PSD conditioner
       is exactly as signal-blind as Stage 1's known-PSD one, because the PSD is causal.
-- [x] **Check — whitening quality:** flat in band (tilt 1.26 on smoke), std 1.001 from the one
-      global constant on blocks it was not measured on
-- [x] **Measure — non-Gaussianity:** on 4 smoke blocks already: excess kurtosis +0.032 vs
-      −0.000 simulated, and **P(|x| > 5σ) = 1.1×10⁻⁵ — twenty times the Gaussian rate**
-      (5.7×10⁻⁷). The tails are real, measured, and waiting for the model. Full-file numbers
-      to follow.
+- [x] **Check — whitening quality:** flat in band (tilt 1.16), and the global constant
+      measured on the FIRST 8 blocks gives **median crop std 0.989 on the LAST 8** — the
+      scale survives 29 h of detector drift.
+- [x] **Measure — non-Gaussianity:** with glitchy crops excluded, real O3 still has
+      excess kurtosis +0.13 and **P(|x| > 5σ) = 4.0×10⁻⁵ — seventy times the Gaussian
+      rate.** The tails are everywhere, not just in the glitches.
+
+> [!warning] 🐛 The check that failed, and why the DATA was right
+> The first full-file run FAILED the scale-transfer gate: pooled std 5.0, per-block up to
+> 32.9, pooled kurtosis 129,531. The diagnosis (per-crop stds over every data block) found
+> the whitening calibration **perfect everywhere** — median crop std 0.993 across all 197
+> blocks — and the "failure" to be **two real glitches**: one crop at GPS ~1238343793 with
+> std 263 (peak excursion ~6000σ), one at ~1238353104 with std 32, in otherwise pristine
+> blocks. **The measured glitch rate is ~28 crops/h with std > 2.**
+>
+> The data stays. Glitches are Stage 2's subject matter (and Stage 3's whole diet) —
+> sanitising them away would quietly turn real noise back into the Gaussian we left Stage 1
+> to escape. What changed is the CHECK: the calibration gate now uses the **median** crop
+> std (a calibration statistic a glitch cannot move), and the monsters are **reported as a
+> rate** instead of poisoning a mean. Stage 1's lesson in new clothes: *read the shape of
+> the failure before believing your first theory* — the gate said "calibration broke", the
+> shape said "two loud samples in 512".
 
 ![[2_condition_check.png]]
 
