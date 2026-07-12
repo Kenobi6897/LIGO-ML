@@ -73,7 +73,7 @@ cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 1"
 python stage1_noise_check.py
 ```
 
-- [ ] `mkdir -p ~/ligo-data`
+- [x] `mkdir -p ~/ligo-data` — the writer creates it; `stage1.h5` lives there.
 - [x] Port [[Stage 0]]'s `condition()` logic across — but **fix the PSD leak first** (see below).
 
 ### 🖥️ What actually uses the GPU
@@ -322,8 +322,15 @@ Step 4's SNR check conditioned the **unscaled** waveform — it dropped the `snr
 
 Two things saved it. The number was **absurd** (4360×) rather than merely wrong — a subtler slip in the same place would have been believed. And it had a **6× spread** when a pure scale error must be a *constant* ratio: the spread was the fingerprint of `σ(m1, m2)`, and it is what said "you are dividing by something mass-dependent" out loud.
 
+### 4. The dataset recorded a number it had never used
+Step 4's writer drew masses in float64, built the waveform from them, and then wrote them to disk as **float32**. Rebuilding a row from its own metadata therefore rebuilt it from a *different waveform* — reproducing it to 10⁻⁵ instead of to 0.
+
+The failure was **exactly zero on every negative and nonzero on every positive**, and that is what named it: negatives carry no waveform parameters, so they have nothing to round. The FFTW theory this note had been carrying could not have known the label.
+
+**It looked exactly like float round-off, and the fix that "worked" was a looser tolerance.** That fix would have deleted the one check that can tell you a writer has come apart from its labels — in order to hide a bug that was really there. Store parameters at the precision you used them.
+
 > [!warning] This is the project's stated failure mode wearing different clothes
-> None of these was a leak, but all three were the *same shape* of problem: code that runs clean and lies. The only reason any was caught is that the check compared against a value known independently. **Write the check that can fail** — and then, when it does, **read the shape of the failure before you believe your first theory about it.** The first theory here (band-limited noise breaks the identity) was *true*, and was not the bug.
+> None of these was a leak, but all four were the *same shape* of problem: code that runs clean and lies. The only reason any was caught is that the check compared against a value known independently. **Write the check that can fail** — and then, when it does, **read the shape of the failure before you believe your first theory about it.** The first theory here (band-limited noise breaks the identity) was *true*, and was not the bug.
 
 ---
 
