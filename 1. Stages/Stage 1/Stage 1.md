@@ -3,7 +3,7 @@ tags: [ligo, machine-learning, stage-1, plan]
 status: in-progress
 created: 2026-07-11
 updated: 2026-07-12
-progress: "Steps 1-3 done and checked. Step 4 (dataset) in progress: writer + lazy Dataset + check written, writer runs. SNR calibration is now GREEN (empirical background, 1.001x median — and it caught a missing SNR rescale in the check itself). One RED left: bit-exact rebuild. Not yet generated the real 100k."
+progress: "Steps 1-4 done and checked. The real 100k dataset EXISTS (~/ligo-data/stage1.h5, 829 MB, 68 min) and passes all 17 checks — bit-exact rebuild, SNR calibrated to 0.995x, no variance leak. Both of Step 4's failures were real and neither was what the note first said. Next: Step 5, the 1D CNN."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -202,7 +202,10 @@ Per segment: generate a **4 s** noise buffer → (if positive) inject a waveform
 - [x] ⚠️ **Get the check green.** **All 17 checks pass**, including the bit-exact rebuild.
 - [x] Run the real 100k.
 
-**Throughput:** 19 seg/s on the smoke run → **100k is ~90 min**, not the few minutes the plan assumed. Worth a look before committing to it; ~20 s of that is per-worker warm-up (each worker recomputes `_norm()` and its PSDs).
+**The real run: 100,000 segments in 68 min** (24 seg/s, 16 workers on the 3700X) → **829 MB** at `~/ligo-data/stage1.h5`, 50,000 + / 50,000 −, split 80,000 / 10,000 / 10,000. Not the few minutes the plan assumed — the CPU was always going to be the bottleneck here, and it was.
+
+> [!tip] The parent must not touch FFTW before it forks
+> `multiprocessing` forks, and a `Pool` forked from a parent that has *already run an FFT* **deadlocks** — the child inherits FFTW/lal planner state that is not safe across a fork. `stage1_dataset.py` gets this right by accident of structure (it draws specs, then forks, and only ever does DSP inside workers). Anything added to `main()` before the `Pool` must keep it that way. A debug script that built one segment first, then forked, hung solid.
 
 #### Two decisions this step had to make that Steps 1–3 didn't
 Both follow from the crop, and both would have been **silent** errors:
@@ -226,15 +229,15 @@ $$\rho \;=\; \frac{\lVert C(h)\rVert^2}{\sigma_{bg}}, \qquad \sigma_{bg} \;=\; \
 
 Numerator and denominator carry the same arbitrary scale and see the same band, so **both cancel**. It assumes nothing about the noise that we did not measure — and it is how a detection statistic would actually be normalised.
 
-**Result: PASS. Median 1.001×** (5th–95th 0.952–1.051, sd 0.029) on a 2k smoke dataset.
+**Result: PASS. Median 0.995×** (5th–95th 0.943–1.055, sd 0.034) on the real 100k.
 
-**And it buys a second check for free.** The same background, correlated against the **stored row** instead of the pure template, gives `(C(h)·x)/σ_bg = ρ + N(0,1)`. Getting **unit variance** back (measured: **+0.05 ± 1.06**) is what proves σ_bg is the right normalisation — and because a misaligned or absent waveform would drive the recovered value to ~0, it *also* proves the row on disk contains the signal its metadata claims, at the sample offset we think. Two of Step 4's silent failure modes, closed by one statistic.
+**And it buys a second check for free.** The same background, correlated against the **stored row** instead of the pure template, gives `(C(h)·x)/σ_bg = ρ + N(0,1)`. Getting **unit variance** back (measured: **−0.018 ± 0.984**) is what proves σ_bg is the right normalisation — and because a misaligned or absent waveform would drive the recovered value to ~0, it *also* proves the row on disk contains the signal its metadata claims, at the sample offset we think. Two of Step 4's silent failure modes, closed by one statistic.
 
 > [!note] Check 4's prediction had the same crack in it
-> It predicted a positive's variance as `1 + ρ²/N` — which is the same white-noise assumption wearing a different hat. It now uses the **measured** `‖C(h)‖²` from the statistic above (`1 + ‖C(h)‖²/N`), so the leak test no longer rests on an assumption the pipeline doesn't satisfy. Measured/predicted = **0.977×**.
+> It predicted a positive's variance as `1 + ρ²/N` — which is the same white-noise assumption wearing a different hat. It now uses the **measured** `‖C(h)‖²` from the statistic above (`1 + ‖C(h)‖²/N`), so the leak test no longer rests on an assumption the pipeline doesn't satisfy. Measured/predicted = **0.976×**.
 
 ![[4_dataset_check.png]]
-*Top-right is the one that matters. Blue = the signal in the CNN's input, on the ideal line. Orange = the same signal measured off the stored row, scattering about it by exactly 1. (From the 2k smoke dataset — regenerate this from the real 100k.)*
+*The real 100k. Top-right is the one that matters. Blue = the signal in the CNN's input, sitting on the ideal line. Orange = the same signal measured off the stored row, scattering about it by exactly 1 — that scatter **is** the noise, and it is why SNR 4 is hard.*
 
 #### ✅ (a) Rebuild is not bit-exact — **FIXED. The file was recording the wrong number.**
 Rebuilding a stored row from its metadata alone reproduced it to `max|Δ| = 6.1×10⁻⁶`, not `0`.

@@ -310,8 +310,8 @@ def main() -> int:
         b.plot(lim, lim, "k--", lw=1, label="ideal")
         b.set_xlabel("requested injected SNR (stored in `snr`)")
         b.set_ylabel("SNR against the file's own background")
-        b.set_title(f"The money plot's x-axis is calibrated\noptimal / requested = {med:.3f}× median "
-                    f"— and the scatter about it is unit-variance noise")
+        b.set_title(f"The money plot's x-axis is calibrated\noptimal / requested = {med:.3f}× median; "
+                    f"the scatter is unit-variance noise")
         b.legend(fontsize=8)
         b.grid(alpha=0.3)
 
