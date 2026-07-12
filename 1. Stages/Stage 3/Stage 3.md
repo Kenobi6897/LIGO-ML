@@ -1,0 +1,135 @@
+---
+tags: [ligo, machine-learning, stage-3, plan]
+status: in-progress
+created: 2026-07-12
+updated: 2026-07-12
+progress: "Started 2026-07-12 — Gravity Spy H1_O3a table in hand (80,763 glitches, 65,457 at conf>=0.9); decisions pinned; build under way."
+parent: "[[GW Signal Classifier - Brainstorm]]"
+---
+
+# Stage 3 — Hard negatives. Glitches, by name.
+
+**Machine:** 🖥️ **Desktop PC**, inside WSL2
+**Depends on:** [[Stage 2]] ✅ — its strain/conditioning machinery, its dataset, its checkpoint
+**Previous:** [[Stage 2]] ✅
+
+> **The goal:** add **Gravity Spy glitches as an explicit, labelled negative class** and report
+> the false-alarm rate *per glitch class*. [[Stage 2]] showed the CNN learns glitch-vs-chirp
+> *implicitly* from ~28 unlabelled glitches/h — enough to re-open FAP 1e-3. Stage 3 feeds it
+> thousands of labelled specimens and measures which glitch morphologies still fool it.
+>
+> This is the stage where the CNN earns (or doesn't) its keep against matched filtering:
+> glitches are exactly what break MF's Gaussian assumptions, and [[GW Signal Classifier -
+> Brainstorm|Stage 4]] will run that comparison. Stage 3 builds the glitch benchmark.
+
+## The data source (probed 2026-07-12)
+
+**Gravity Spy ML classifications, Zenodo record 5649212** (Glanzer et al.), file `H1_O3a.csv`
+(90 MB, cached at `~/ligo-data/gravityspy_H1_O3a.csv`): 80,763 H1 O3a glitches with GPS
+`event_time`/`peak_time`, `duration`, `peak_frequency`, `snr`, `ml_label` (22 classes),
+`ml_confidence`. At confidence ≥ 0.9: 65,457. The big in-band classes: Extremely_Loud (10k,
+94% in-band), Scattered_Light (9.4k), Koi_Fish (7.1k, 99% in-band, median SNR 121), Blip (4k,
+95% in-band), Whistle (6.3k), Low_Frequency_Burst (18k, peaks below band but with in-band
+power), plus Tomte / Repeating_Blips / Blip_Low_Frequency / Scratchy in the hundreds.
+
+**Only 603 confident glitches fall inside [[Stage 2]]'s 29.7 h strain span** — Stage 3 fetches
+its own strain, *targeted*: glitches cluster in time, so we greedily select the GWOSC 4096 s
+files that cover the most not-yet-capped glitches and fetch only those.
+
+## 1. Decisions pinned before writing code
+
+| Decision | Choice | Why |
+|---|---|---|
+| **Glitch selection** | conf ≥ 0.9; classes with ≥ 150 specimens; **cap 1,500/class**; drop `No_Glitch` (ordinary noise — Stage 2 has 50k of it), `None_of_the_Above` (unlabelled), `Chirp` (chirp-shaped by definition — a *label* error waiting to happen) | Confident, balanced, and honest about what "glitch" means. |
+| **Event veto** | ±128 s around every GWOSC catalog event in O3a, same as Stage 2 | An Extremely_Loud "glitch" that is actually GW190521 would be a signal labelled negative. |
+| **Strain fetch** | Reuse Stage 2's block machinery verbatim: 512 s blocks, causal per-block PSD, block 0 of each stretch PSD-only. Stretches = merged glitch neighbourhoods `[g−524 s, g+8 s]` ∩ science segments, chosen by **greedy file-coverage under a download budget (~150 files ≈ 3 h)** | Same conditioning contract as Stage 2 — `stage2_condition` is pointed at the new file unchanged, so every leak property already proven carries over. |
+| **The anti-shortcut rule** | **Every Stage 3 block contributes BOTH classes**: glitch-centred crops as negatives, PLUS injections into clean crops of the *same block* as positives (plain-noise crops fill to ~50/50) | Glitch-only additions would let the model learn "this stretch's texture → negative" — the pos/neg-from-different-stretches leak wearing new clothes. Both classes from every block, identically conditioned, kills it. |
+| **Glitch placement** | Glitch `peak_time` at **U[0.10, 0.95) of the crop** — deliberately OVERLAPPING the injection range U[0.70, 0.95) | If glitches only ever appeared where mergers never do, position would become the label. |
+| **Injections** | Identical to Stages 1–2: `IMRPhenomD`, U[10,50] M☉, SNR U[4,20] vs the block's measured PSD | Still one variable per stage: the new thing is labelled glitches, nothing else. |
+| **Splits** | Time-ordered 80/10/10 at block level, independently of Stage 2 (Stage 2's splits are frozen); training mixes Stage2-train + Stage3-train | Same honesty as Stage 2: val/test strictly later than train, within the Stage 3 data. |
+| **Architecture** | **Unchanged `Stage1CNN`**, trained from scratch on the mix | The question is what the *data* buys, not the architecture. |
+| **2D Q-transform arm** | **Deferred** to a Stage 3b if wanted — the brainstorm's 2D comparison is real but the 1D benchmark must exist first | Scope control; [[1D vs 2D - decision explained]] stands. |
+
+### 📁 Where things live
+| | |
+|---|---|
+| **Code** | `1. Stages/Stage 3/` — imports Stage 1 + Stage 2 modules via `sys.path` |
+| **Glitch table** | `~/ligo-data/gravityspy_H1_O3a.csv` (Zenodo 5649212) |
+| **Selection** | `~/ligo-data/stage3_selection.h5` — chosen glitches + merged spans |
+| **Raw strain** | `~/ligo-data/stage3_strain.h5` — same schema as Stage 2's |
+| **Dataset** | `~/ligo-data/stage3.h5` — Stage 2 schema + `glitch_label`, `glitch_snr`, `glitch_conf` |
+| **Checkpoint** | `~/ligo-data/stage3_cnn.pt` |
+
+## 2. The build
+
+### Step 1 — Select glitches + plan the download — `stage3_select.py` + check
+- [ ] Filter (conf, class, event veto, ≥ 524 s from science-segment start, ≥ 8 s from end)
+- [ ] Greedy file-coverage selection under budget; merge spans; write the selection table
+- [ ] **Check:** every selected glitch satisfies every constraint (re-verified independently);
+      per-class counts within caps; span accounting matches the budget
+
+### Step 2 — Fetch the strain — `stage3_fetch.py` + check
+- [ ] Reuse Stage 2's fetch machinery over the merged spans → `stage3_strain.h5`
+- [ ] **Check:** Stage 2's fetch check, pointed at the new file (no NaNs, science-mode,
+      event-vetoed, disjoint, PSD-block-led stretches) — plus: every selected glitch's
+      buffer AND its causal PSD block actually exist in the file
+
+### Step 3 — Write the dataset — `stage3_dataset.py` + `stage3_data.py` + check
+- [ ] Rows per block: glitch-centred negatives + clean-crop injections + plain-noise
+      negatives, ~50/50 pos/neg, identical `condition_real()` call for all
+- [ ] **Check:** structure; bit-exact rebuild; SNR calibration (ρ statistic, same-block
+      backgrounds); **glitch-presence check** — a glitch-centred crop must actually contain
+      excess power (std above the block's clean-crop distribution) at the recorded position
+- [ ] Time-ordered splits verified
+
+### Step 4 — Train on the mix — `stage3_train.py`
+- [ ] Stage2-train ∪ Stage3-train, same recipe, model selection on the combined val
+- [ ] Checkpoint → `~/ligo-data/stage3_cnn.pt`
+
+### Step 5 — The glitch benchmark — `stage3_eval.py` 🎯
+- [ ] Arms: **C** = Stage-2 model (glitch-naive), **D** = Stage-3 model (glitch-trained),
+      both on: the Stage 2 test split (efficiency must NOT degrade) and the Stage 3 glitch
+      test set
+- [ ] **The money table: per-class glitch false-alarm fraction at FAP 1e-2 / 1e-3
+      thresholds** (set on each arm's own val negatives) — which morphologies fool a
+      chirp detector, and which stop fooling it once it has seen them by name
+- [ ] Overall FAR on glitch-rich data, honestly denominated
+
+### Step 6 — Notes + commit
+
+## 3. Footguns
+
+### ⚠️⚠️ The stretch-texture shortcut (this stage's own leak)
+Adding glitches only as negatives from new time spans teaches "unfamiliar stretch → say no".
+The anti-shortcut rule above (both classes from every block) is not optional, and the eval
+guards it from the other side: Stage-2-test efficiency must not drop.
+
+### ⚠️ A "glitch" that is a signal
+`Chirp` class excluded; catalog events vetoed; Extremely_Loud specimens near event times die
+with the veto. Sub-threshold astrophysics in the glitch set remains possible and is accepted
+(same honesty note as Stage 2's).
+
+### ⚠️ Position as label
+Glitch placement overlaps injection placement by construction. Check it stays that way.
+
+### ⚠️ The PSD block may itself be glitchy
+Glitches cluster, so the 512 s before a glitch often holds more glitches. Median Welch
+bounds the damage (Stage 2's choice, made for exactly this); the dataset check's SNR
+calibration measures what remains.
+
+### 🚩 The tell, Stage 3 edition
+If arm D rejects every class at ~100% while keeping full efficiency, be suspicious: some
+classes (Blip especially) are morphologically close to short chirps, and a perfect score
+more likely means the glitch test set leaked into training than that the problem died.
+
+## Done when
+
+- [ ] Per-class glitch FA table exists for both models, at FAP 1e-2 and 1e-3
+- [ ] The Stage-3 model beats the Stage-2 model on glitch rejection **without losing
+      efficiency on the Stage 2 test split**
+- [ ] The classes that still fool the detector are named, with example figures
+- [ ] The why is written down
+
+→ Then **[[GW Signal Classifier - Brainstorm|Stage 4]]**: the matched-filter baseline, at
+equal false-alarm rate, on data that now includes labelled glitches — the fight the whole
+project was built to referee.
