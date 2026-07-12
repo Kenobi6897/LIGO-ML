@@ -7,23 +7,24 @@ Guidance for Claude Code when working in this vault.
 
 An **Obsidian vault that also carries the project's code.** It is mostly notes — planning for a
 LIGO gravitational-wave signal classification project — and the notes are the source of truth for
-project decisions. But as of 2026-07-12 the stage code lives here too, under `4. Code/`.
+project decisions. But as of 2026-07-12 the stage code lives here too, **inside the stage folders
+themselves**: each stage is one folder holding its note, its scripts and its plots.
 
 The vault is synced between **two machines via git** (laptop + desktop PC). See "Two-machine
 workflow" below — it changes how you should start and end a session.
 
 ## Layout
 
-- `1. Stages/` — the plan and the per-stage logs.
+- `1. Stages/` — the plan, the per-stage logs, **and the code.**
   - `GW Signal Classifier - Brainstorm.md` — the master planning note. Environment decisions,
     staged plan (Stage 0–4), known failure modes, reference papers. **Read this first.**
-  - `Stage 0.md`, `Stage 1.md` — per-stage write-ups. Stage 0 is complete.
+  - `Stage 0/`, `Stage 1/` — **one folder per stage, holding everything about that stage:** the
+    write-up (`Stage N.md`), the scripts, `requirements-stageN.txt`, a gitignored `.venv/`, and
+    `outputs/` with the committed plots — which the note embeds with `![[plot.png]]`. Each stage
+    folder is self-contained; Stage 0 is complete.
+    - `Stage 0/` is pure gwpy/scipy and **runs natively on Windows.** Stages 1+ need WSL2.
 - `2. Explained/` — standalone explainers (Q-transform, matched filtering, 1D-vs-2D).
 - `3. Setup/` — machine setup checklists, and this file.
-- `4. Code/` — **the code.** One directory per stage; each is self-contained, with its own
-  `requirements-*.txt` and a gitignored `.venv/`. Plots are committed alongside the script that
-  makes them, and embedded into the stage note with `![[plot.png]]`.
-  - `stage0/` — pure gwpy/scipy, **runs natively on Windows.** Stages 1+ will need WSL2.
 - `.obsidian/` — Obsidian config. Tracked in git so both machines share settings.
 
 ## Code conventions

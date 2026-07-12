@@ -62,14 +62,14 @@ head -1 /proc/meminfo                                   # ~10GB, i.e. .wslconfig
 ### 📁 Where things live
 | | |
 |---|---|
-| **Code** | **`4. Code/stage1/` — in the vault, in git.** Scripts sit beside the notes that explain them. |
+| **Code** | **`1. Stages/Stage 1/` — in the vault, in git.** Scripts sit in the same folder as this note. |
 | **Data** | `~/ligo-data/` inside WSL2 — **never in the vault, never in git** |
 | **Notes** | the vault (Windows side). WSL2 reaches it at `/mnt/c/Users/locke/Documents/LIGO-ML` |
 
 Scripts are run from WSL2 against the Windows-side vault — one copy of the code, no syncing:
 ```bash
 source ~/venvs/ligo/bin/activate
-cd "/mnt/c/Users/locke/Documents/LIGO-ML/4. Code/stage1"
+cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 1"
 python stage1_noise_check.py
 ```
 

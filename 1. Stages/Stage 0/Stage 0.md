@@ -10,8 +10,8 @@ parent: "[[GW Signal Classifier - Brainstorm]]"
 
 **Status:** ✅ Complete, 2026-07-11
 **Machine:** first run on the laptop (i7-1255U, Iris Xe) — **native Windows, no WSL, no GPU**
-**Code:** `4. Code/stage0/stage0_gw150914.py` — **in the repo**, runs on either machine
-**Outputs:** `4. Code/stage0/outputs/` — the three plots below, committed
+**Code:** `1. Stages/Stage 0/stage0_gw150914.py` — **in the repo**, beside this note, runs on either machine
+**Outputs:** `1. Stages/Stage 0/outputs/` — the three plots below, committed
 
 > [!note]- Provenance of the committed plots
 > Stage 0 was originally run on the laptop, and its code lived outside the vault at
@@ -172,7 +172,7 @@ This is the single most likely way this project silently fails.
 ## Reproduce
 From the vault root, on **either machine** — native Windows is fine, Stage 0 needs no WSL:
 ```powershell
-cd "4. Code\stage0"
+cd "1. Stages\Stage 0"
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements-stage0.txt
 .\.venv\Scripts\python stage0_gw150914.py
