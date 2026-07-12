@@ -1,0 +1,31 @@
+# Stage 1 — WSL2 (Ubuntu 26.04), CPython 3.13, GPU.
+#
+# THE PYTHON VERSION IS LOAD-BEARING. Ubuntu 26.04 ships Python 3.14, and `pycbc` has no
+# 3.14 wheel yet (lalsuite and torch both do — pycbc is the lone holdout). Installing
+# against the system interpreter forces a source build of pycbc, which fails.
+#
+# So the venv is pinned to CPython 3.13 with uv:
+#     uv venv --python 3.13 ~/venvs/ligo
+#     source ~/venvs/ligo/bin/activate
+#     uv pip install -r "4. Code/stage1/requirements-stage1.txt"
+#
+# Don't "upgrade" the venv to the system interpreter. Revisit once pycbc ships cp314.
+#
+# Torch needs no --index-url pin and no CUDA toolkit: the default Linux wheels bundle
+# their own CUDA runtime. The toolkit only supplies nvcc, and we compile no kernels.
+# NEVER install a Linux NVIDIA driver inside WSL2 — the Windows driver is passed through.
+
+# --- the reason WSL2 exists: no Windows wheels for these ---
+lalsuite
+pycbc
+
+gwpy
+torch
+
+numpy
+scipy
+matplotlib
+h5py
+
+scikit-learn   # roc_curve / roc_auc_score — we do NOT evaluate on accuracy
+tqdm           # dataset generation is a long loop

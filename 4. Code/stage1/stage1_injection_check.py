@@ -9,7 +9,9 @@ Why this check earns its keep: the SNR we request becomes the x-axis of the mone
 axis is mislabelled, the curve is nonsense, and nothing about the result would look
 wrong -- it would just be wrong.
 
-Run:  source ~/venvs/ligo/bin/activate && python code/stage1_injection_check.py
+Run (from WSL2):
+    source ~/venvs/ligo/bin/activate
+    python "4. Code/stage1/stage1_injection_check.py"
 """
 
 from pathlib import Path
@@ -165,7 +167,7 @@ def main() -> int:
     axw.grid(alpha=0.3)
 
     fig.tight_layout()
-    path = OUT / "stage1_injection_check.png"
+    path = OUT / "2_injection_check.png"
     fig.savefig(path, dpi=130)
     print(f"  plot -> {path}")
     return 0 if ok else 1

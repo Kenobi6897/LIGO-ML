@@ -7,7 +7,9 @@ Why bother: every positive in Stage 1 is "a negative with a waveform added", so 
 generator produces BOTH classes. If its spectrum is wrong, the injected SNRs are wrong,
 and every number downstream is quietly wrong with them.
 
-Run:  source ~/venvs/ligo/bin/activate && python code/stage1_noise_check.py
+Run (from WSL2):
+    source ~/venvs/ligo/bin/activate
+    python "4. Code/stage1/stage1_noise_check.py"
 """
 
 from pathlib import Path
@@ -95,7 +97,7 @@ def main() -> int:
     axr.grid(alpha=0.3, which="both")
 
     fig.tight_layout()
-    path = OUT / "stage1_psd_check.png"
+    path = OUT / "1_psd_check.png"
     fig.savefig(path, dpi=130)
     print(f"  plot -> {path}")
     return 0 if ok else 1
