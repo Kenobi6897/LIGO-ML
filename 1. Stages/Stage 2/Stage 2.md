@@ -6,7 +6,7 @@ updated: 2026-07-12
 progress: "Started 2026-07-12 — decisions pinned, build under way."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
-
+/us
 # Stage 2 — Real O3 noise. Where it gets real.
 
 **Machine:** 🖥️ **Desktop PC** (Ryzen 7 3700X / RTX 3070 / 16 GB), inside WSL2
