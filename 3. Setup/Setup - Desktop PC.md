@@ -50,9 +50,13 @@ can wait for a separate sitting.
 > anti-cheat games. If you run neither, you'll notice nothing.
 >
 > **Still unverified (deliberately left unticked, don't assume them):**
-> - The **Claude auto-pull hook** — the session that would have proved it started *outside* the
->   vault (`C:\Users\locke`), so the vault's `SessionStart` hook never fired. No evidence either way.
+> - ~~The **Claude auto-pull hook**~~ — ✅ **proven 2026-07-12.** A session started *inside* the vault
+>   and the hook pulled on launch. Part 1 is now complete. See the box in Part 1.
 > - Everything in Parts 2–4 downstream of the distro.
+>
+> **Re-confirmed on 2026-07-12 (not assumed — `wsl -l -v` / `wsl --version` run fresh):** the platform
+> is still healthy (WSL 2.7.10, kernel 6.18.33.2) and there are **still zero installed distributions**.
+> Nothing decayed and nothing self-healed overnight; the single next action below is unchanged.
 >
 > **Don't "fix" [[Stage 0]]'s `C:\Users\tmloc\...` paths.** They look stale but are correct: Stage 0
 > is a log of work done on the *laptop*, where that genuinely was the username. Only [[Stage 1]]'s
@@ -137,12 +141,14 @@ can wait for a separate sitting.
       key names were inferred, not read off a running plugin, so if Settings → Git shows defaults
       instead, just set the four by hand as originally written.
 
-- [ ] **Verify the Claude auto-pull hook.** `.claude/settings.json` came down with the clone, so
+- [x] **Verify the Claude auto-pull hook.** `.claude/settings.json` came down with the clone, so
       it's already there. Start Claude Code inside `Documents\LIGO-ML` and confirm it pulls on
       launch. If it doesn't fire, open `/hooks` once — Claude's settings watcher only tracks
       directories that had a settings file when the session began.
-      *File confirmed present on the PC; not yet observed firing, since this session started outside
-      the vault.*
+      *✅ **Observed firing, 2026-07-12 on the PC.** A session started **inside** the vault (the
+      earlier one started at `C:\Users\locke`, which is why it never fired). The `SessionStart` hook
+      pulled `4374576..1951809` as a clean fast-forward before the first prompt. No `/hooks` nudge
+      was needed.*
 
 - [x] **Prove the round-trip.** Edit a note on the PC, wait for auto-push, then pull on the
       laptop and confirm it lands. Do this *before* you have work worth losing.
