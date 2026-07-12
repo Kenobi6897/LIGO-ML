@@ -1,8 +1,9 @@
 ---
 tags: [ligo, machine-learning, stage-1, plan]
-status: ready
+status: in-progress
 created: 2026-07-11
 updated: 2026-07-12
+progress: "Steps 1-3 done and checked (noise, injections, conditioning). Next: Step 4, the dataset."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -61,12 +62,19 @@ head -1 /proc/meminfo                                   # ~10GB, i.e. .wslconfig
 ### 📁 Where things live
 | | |
 |---|---|
-| **Code** | `~/ligo-ml/` inside WSL2 — clone from git, edit from either machine |
+| **Code** | **`4. Code/stage1/` — in the vault, in git.** Scripts sit beside the notes that explain them. |
 | **Data** | `~/ligo-data/` inside WSL2 — **never in the vault, never in git** |
-| **Notes** | the vault (Windows side). WSL2 can reach it at `/mnt/c/Users/locke/Documents/LIGO-ML` |
+| **Notes** | the vault (Windows side). WSL2 reaches it at `/mnt/c/Users/locke/Documents/LIGO-ML` |
+
+Scripts are run from WSL2 against the Windows-side vault — one copy of the code, no syncing:
+```bash
+source ~/venvs/ligo/bin/activate
+cd "/mnt/c/Users/locke/Documents/LIGO-ML/4. Code/stage1"
+python stage1_noise_check.py
+```
 
 - [ ] `mkdir -p ~/ligo-data`
-- [ ] Port [[Stage 0]]'s `condition()` logic across — but **fix the PSD leak first** (see below).
+- [x] Port [[Stage 0]]'s `condition()` logic across — but **fix the PSD leak first** (see below).
 
 ### 🖥️ What actually uses the GPU
 **Almost nothing.** Be clear-eyed about this:
@@ -101,35 +109,83 @@ Pin these now — changing them later means regenerating the dataset.
 
 ## 2. The build
 
-### Step 1 — Noise generator
+> [!tip] Every step ships with a check that can fail
+> Each of Steps 1–3 is a `*_check.py` that compares the code against something we **independently know** to be true. This is not ceremony. Steps 2 and 3 each caught a real bug that produced *plausible numbers* rather than a crash — see [[#🐛 Bugs the checks caught]]. On this project, a silent wrong answer is the default failure mode, not the exception.
+
+### ✅ Step 1 — Noise generator — `stage1_noise_check.py`
 ```python
 from pycbc.psd import aLIGOZeroDetHighPower
 from pycbc.noise import noise_from_psd
 ```
-Coloured Gaussian noise at the aLIGO design sensitivity. This is the **same** generator for positives and negatives — a positive is just a negative with a waveform added.
+Coloured Gaussian noise at aLIGO design sensitivity. The **same** generator makes positives and negatives — a positive is just a negative with a waveform added. If its spectrum is wrong, every injected SNR downstream is wrong with it.
 
-- [ ] Generate noise segments
-- [ ] Sanity check: PSD of generated noise should match the design curve
+- [x] Generate noise segments
+- [x] Sanity check: PSD of generated noise matches the design curve
 
-### Step 2 — Waveform generator + SNR scaling
+**Result: PASS.** Measured (Welch) / design PSD ratio over 30–350 Hz: **median 0.999** (5th–95th pct 0.805–1.215 — that spread is Welch's χ² scatter, not bias; the *median* is the test).
+
+![[1_psd_check.png]]
+
+### ✅ Step 2 — Waveform generator + SNR scaling — `stage1_injection_check.py`
 ```python
 from pycbc.waveform import get_td_waveform
 from pycbc.filter import sigma          # optimal SNR of a waveform vs a PSD
 ```
-For each positive:
-1. Sample masses, generate the waveform
+1. Sample masses, generate the waveform (`IMRPhenomD`)
 2. Compute its **optimal SNR** against the PSD (`sigma`)
-3. **Rescale** it to hit a target SNR drawn from [4, 20]
+3. **Rescale** to hit a target SNR from [4, 20]
 4. Add it into a noise segment
 
-- [ ] ⚠️ **Randomise where the merger sits in the 1 s window.** See [[#Footguns]].
+- [x] ⚠️ **Randomise where the merger sits in the 1 s window** — `rng.uniform(0.7, 0.95)`. See [[#Footguns]].
 
-### Step 3 — Condition (whiten → bandpass → crop)
-Port from [[Stage 0]] — **but with the PSD fix.** See [[#Footguns]].
+**Result: PASS.** Request an SNR, then measure it back with an independent matched filter:
 
-Apply **identically** to positives and negatives. Same function, same PSD, no branches.
+| target | recovered (mean ± sd) | bias |
+|---|---|---|
+| 4 | 4.49 ± 0.81 | 1.12× |
+| 8 | 7.72 ± 0.81 | 0.97× |
+| 12 | 12.03 ± 1.02 | 1.00× |
+| 20 | 20.00 ± 0.99 | 1.00× |
 
-### Step 4 — Write the dataset
+Two things worth noticing. **σ ≈ 1.0 at every SNR** — matched-filter SNR has unit variance by construction, so getting it back is strong evidence the whitening and normalisation are right. And the **high bias at low SNR is physics, not a bug**: with a weak signal the filter peaks on a noise fluctuation near it. That is *precisely why low-SNR detection is hard*, and it is what the money plot in Step 6 is measuring.
+
+![[2_injection_check.png]]
+
+### ✅ Step 3 — Condition (whiten → bandpass → crop) — `stage1_condition.py`
+The most dangerous function in the project, so it is the smallest. **The rule: `condition()` never looks at the segment's own content.** It whitens with the *known* design PSD and one global scale constant — so it is the same fixed filter for every segment, positive or negative. No branches.
+
+**A 4 s buffer for a 1 s segment.** Whitening and band-passing are convolutions, so they corrupt both ends of whatever you hand them. Generate 4 s, condition it, crop the central 1 s → 2048 samples, safely 1.5 s clear of either edge. *Crop from a longer buffer; never try to fix the edges of a short one.* (`inverse_spectrum_truncation` bounds the whitening filter to 0.5 s so the corruption is a length we can afford to throw away.)
+
+- [x] Whiten with the **known** design PSD — never a per-segment estimate
+- [x] Bandpass 30–350 Hz (`highpass_fir` / `lowpass_fir`, zero-phase)
+- [x] Crop the corrupted edges away
+- [x] Global scale constant, measured on **noise only** — *not* per-segment ([[#Footguns|the unit-variance leak]])
+
+#### The leak test — `stage1_condition_check.py`
+How do you *prove* a whitener isn't leaking? State it as a property that can fail:
+
+> **A signal-blind operator applies the same fixed filter to every segment — so the change a signal makes cannot depend on the noise it landed in.**
+> $$C(n_1 + h) - C(n_1) \;=\; C(n_2 + h) - C(n_2)$$
+
+Same signal, two different noise realisations. If the whitener is built *from the segment*, the two responses differ — and that difference is a signal-dependent stamp on the noise floor, far easier for a CNN to learn than a chirp.
+
+| | disagreement |
+|---|---|
+| `condition()` — known PSD | **1×10⁻⁷** — machine precision. Signal-blind. |
+| `condition_leaky()` — per-segment PSD ([[Stage 0]]'s `.whiten()`) | **36%** — the same signal is conditioned *differently* depending on its noise. |
+
+**Result: PASS** on all four checks — noise whitened flat in band (tilt 4.5× → 0.86×), conditioned noise std 0.978 from one global constant, `condition()` signal-blind, and `condition_leaky()` demonstrably not.
+
+In the right-hand panel the two chirps (green, black-dashed) lie exactly on top of each other — same signal, different noise, identical response. The purple trace is the leaky whitener's residue, and it visibly **tracks the chirp**. That purple line is what a 99%-AUC model would actually be detecting.
+
+![[3_condition_check.png]]
+
+> [!note] The demo has to survive a hostile reading
+> The first version of this test compared against `C(h)` — the whitener applied to a **pure signal with no noise**. It "failed" the leaky whitener by a factor of 10¹⁰, which was flattering and meaningless: no detector ever produces a noiseless signal, and a per-segment whitener is undefined on one. The version above only ever feeds both operators inputs the real pipeline actually sees. It is a weaker-looking number and a much stronger claim.
+
+### ▶️ Step 4 — Write the dataset — NEXT
+Per segment: generate a **4 s** noise buffer → (if positive) inject a waveform scaled to a target SNR → `condition()` → store the central **2048** samples. Positives and negatives go through the identical call.
+
 - [ ] HDF5 at `~/ligo-data/stage1.h5`, arrays `X` (N, 1, 2048) and `y` (N,)
 - [ ] **Lazy load in `Dataset.__getitem__`.** Do NOT `np.load` the whole thing into RAM — 16 GB, shared with Windows.
 - [ ] Also store **per-segment SNR** and masses — you need SNR at eval time to plot efficiency curves, and you cannot recover it later.
@@ -181,6 +237,27 @@ Normalising each segment to unit variance **leaks the injection** — adding a s
 > **If AUC is suspiciously high, assume leakage before assuming genius.**
 
 A correct Stage 1 model should be **roughly comparable to matched filtering — and clearly *fail* at low SNR.** If it detects SNR-4 signals perfectly, that is not a triumph. That is a bug.
+
+---
+
+## 🐛 Bugs the checks caught
+
+Both of these were found by Step 2's check. **Neither one crashed.** Both produced confident, plausible-looking numbers — which is the entire argument for writing a check that compares against something you independently know.
+
+### 1. `resize()` threw the merger away
+At 10–50 M☉ from 30 Hz, an `IMRPhenomD` waveform is **longer than the 1 s window** — often several seconds. The obvious `hp.resize(n)` keeps the **first** *n* samples: the quiet early inspiral. It silently discards the merger — the loudest part, and the only part the window actually sees.
+
+So `sigma()` was normalising against a waveform that wasn't in the data. Recovered SNR came back biased 0.42–0.95×, *worsening with SNR*.
+
+**Fix:** place the waveform by aligning its **amplitude peak** to the target merger time, and let the early inspiral fall off the front of the window. Compute `sigma` on the **placed snippet** — so "SNR 12" means *the SNR of the signal actually present in the segment*, which is the only definition the money plot's x-axis can be held to.
+
+### 2. The crop deleted the answer
+`recover_snr()` cropped the edges of the SNR time series — an innocent, standard-looking `[edge:-edge]`. But the template is placed at the **same alignment as the signal**, so the matched filter peaks at **lag zero — index 0**. The crop removed precisely the peak being measured.
+
+It returned a flat **~3.6 for every target SNR**: the pure-noise background, reported with total confidence. Not an error, not a NaN — just a wrong number that looked like a number.
+
+> [!warning] This is the project's stated failure mode wearing different clothes
+> Neither bug was a leak, but both were the *same shape* of problem: code that runs clean and lies. The only reason either was caught is that the check compared against a value known independently. **Write the check that can fail.**
 
 ---
 
