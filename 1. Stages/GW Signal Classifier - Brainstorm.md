@@ -136,7 +136,7 @@ Rules that prevent it:
 
 Each stage produces a result we can look at.
 
-- [x] **Stage 0 — DONE (2026-07-11).** ✅ Pulled GW150914, whitened, bandpassed, **saw the chirp.** Ran on the *laptop*, native Windows, no WSL. **Full write-up: [[Stage 0]].** Code: `C:\Users\tmloc\ligo-ml\stage0_gw150914.py`, plots in `stage0_outputs/`.
+- [x] **Stage 0 — DONE (2026-07-11).** ✅ Pulled GW150914, whitened, bandpassed, **saw the chirp.** First run on the *laptop*, native Windows, no WSL. **Full write-up: [[Stage 0]].** Code + plots are **in the repo** at `4. Code/stage0/` (added 2026-07-12; re-run on the PC to regenerate them, same result).
     - Q-transform shows the textbook upward sweep (~35 → 250 Hz) cutting off at merger, in **both** detectors.
     - H1/L1 overlay lines up after shifting L1 by **+6.9 ms** and **inverting** it. That inter-detector coincidence is the argument for a **2-channel CNN input** later.
     - Correct merger GPS is **1126259462.423** (not `.4` — that puts the chirp 23 ms off-center).
