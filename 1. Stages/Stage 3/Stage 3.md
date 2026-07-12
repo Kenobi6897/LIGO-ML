@@ -3,7 +3,7 @@ tags: [ligo, machine-learning, stage-3, plan]
 status: in-progress
 created: 2026-07-12
 updated: 2026-07-12
-progress: "Started 2026-07-12 — Gravity Spy H1_O3a table in hand (80,763 glitches, 65,457 at conf>=0.9); decisions pinned; build under way."
+progress: "2026-07-12 — Step 1 DONE (2,991 glitches / 13 classes selected, all checks green after two selection bugs caught pre-download). Step 2's 56 h fetch running detached (392 blocks). Steps 3-5 code written, imports verified."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -62,11 +62,27 @@ files that cover the most not-yet-capped glitches and fetch only those.
 
 ## 2. The build
 
-### Step 1 — Select glitches + plan the download — `stage3_select.py` + check
-- [ ] Filter (conf, class, event veto, ≥ 524 s from science-segment start, ≥ 8 s from end)
-- [ ] Greedy file-coverage selection under budget; merge spans; write the selection table
-- [ ] **Check:** every selected glitch satisfies every constraint (re-verified independently);
-      per-class counts within caps; span accounting matches the budget
+### ✅ Step 1 — Select glitches + plan the download — `stage3_select.py` + check
+**DONE — 2,991 glitches, 13 classes, 96 disjoint spans, 56.2 h / ~100 GWOSC files. All 8
+checks PASS.** Six classes at ~360–400 specimens (Koi_Fish, Scattered_Light,
+Extremely_Loud, Blip, Whistle, Low_Frequency_Burst), seven more at ~80–115.
+- [x] Filter (conf ≥ 0.9, class rules, event veto at ±(128+512) s, segment geometry)
+- [x] **Per-class round-robin greedy** under a file budget; spans on a **per-segment block
+      grid**; write the selection table
+- [x] **Check:** every constraint re-verified from the CSV and GWOSC independently
+
+> [!warning] 🐛 Two selection bugs the check (and its own output) caught before any download
+> **1. Greedy by raw coverage chased storms.** The first objective — take the file covering
+> the most glitches — spent the whole budget on **three Scattered_Light storm files**
+> (1,240 of one class, 10 Blips, 10 Koi_Fish). Balance had to *be* the objective: round-robin
+> over under-target classes, neediest first, opportunistic take of whatever else the file
+> holds.
+> **2. Block-completion rounding cascaded 56 h into 214 h.** Spans were extended to complete
+> their last 512 s block; extensions overran the next span; merged spans extended further —
+> a feedback loop the disjointness check caught (and a fixed-point remerge only made
+> quietly worse). Fix: **anchor blocks to a per-segment grid** (`seg_start + 8 + k·512`) and
+> fetch exactly the blocks glitches need (k and its causal k−1). No rounding, no feedback —
+> and the accounting came back to 56.18 h on its own.
 
 ### Step 2 — Fetch the strain — `stage3_fetch.py` + check
 - [ ] Reuse Stage 2's fetch machinery over the merged spans → `stage3_strain.h5`
