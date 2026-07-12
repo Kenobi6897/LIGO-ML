@@ -1,0 +1,23 @@
+# Stage 2 — WSL2 (Ubuntu 26.04), CPython 3.13, GPU. Identical environment to Stage 1;
+# no new packages. (`gwosc` — used for segment/event queries — is already a gwpy dep.)
+#
+# THE PYTHON VERSION IS STILL LOAD-BEARING: pycbc has no cp314 wheel. See Stage 1's
+# requirements file for the full story. Same venv:
+#     source ~/venvs/ligo/bin/activate
+#
+# NEVER install a Linux NVIDIA driver inside WSL2 — the Windows driver is passed through.
+
+lalsuite
+pycbc
+
+gwpy
+gwosc          # H1_DATA science segments + catalog event vetoes
+torch
+
+numpy
+scipy
+matplotlib
+h5py
+
+scikit-learn
+tqdm
