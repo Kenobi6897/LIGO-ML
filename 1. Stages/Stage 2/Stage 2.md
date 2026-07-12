@@ -1,9 +1,9 @@
 ---
 tags: [ligo, machine-learning, stage-2, plan]
-status: in-progress
+status: done
 created: 2026-07-12
 updated: 2026-07-12
-progress: "2026-07-12 — Steps 1-2 DONE on the full 29.7 h fetch (all checks green; glitch rate measured at ~28/h, worst crop std 263 — investigated, kept, check made robust). Step 3's ~100k build running. Steps 4-6 code ready."
+progress: "COMPLETE — all 6 steps done, every check green (23 checks across 4 check scripts). Transfer: AUC 0.9877->0.9703, FA/h x2/x6/x52 at FAP 1e-1/1e-2/1e-3 — the damage is in the tail. Retraining recovers half the AUC and re-opens FAP 1e-3 entirely (0.008->0.957 at SNR 8-10). The why is measured: 70x Gaussian 5-sigma tails + ~28 glitches/h + non-stationarity."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
