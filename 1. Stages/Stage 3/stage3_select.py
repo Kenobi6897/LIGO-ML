@@ -165,18 +165,33 @@ def main() -> int:
     sel = pd.concat(chosen).sort_values("gps").reset_index(drop=True)
 
     # --- block-aligned merged spans, clipped to segments; drop the incompletable -------
-    spans = []
+    # Extending a span's end to complete its last 512 s block can overrun the NEXT
+    # span's start (the first run of stage3_select_check.py caught exactly that), so
+    # extend-and-remerge is iterated to a fixed point before anything is written.
+    def extend(a: float, b: float) -> tuple[float, float]:
+        seg = segs[(segs[:, 0] <= a) & (segs[:, 1] > a)][0]
+        n = int(np.ceil((b - (a + PAD)) / BLOCK_LEN))
+        return a, min(a + 2 * PAD + n * BLOCK_LEN, seg[1])
+
+    spans = merged_spans(sel.gps.values)
+    while True:
+        ext = [extend(a, b) for a, b in spans]
+        merged = [list(ext[0])]
+        for a, b in ext[1:]:
+            if a < merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], b)
+            else:
+                merged.append([a, b])
+        merged = [(a, b) for a, b in merged]
+        if merged == spans:
+            break
+        spans = merged
+
     keep = np.zeros(len(sel), dtype=bool)
-    for a, b in merged_spans(sel.gps.values):
-        seg = segs[(segs[:, 0] <= a) & (segs[:, 1] >= a)][0]
-        # round the end up to complete the last block, then clip to the segment
-        n_blocks = int(np.ceil((b - (a + PAD)) / BLOCK_LEN))
-        end = min(a + 2 * PAD + n_blocks * BLOCK_LEN, seg[1])
+    for a, end in spans:
         n_blocks = int((end - a - 2 * PAD) // BLOCK_LEN)  # complete blocks only
         block_end = a + PAD + n_blocks * BLOCK_LEN
-        spans.append((a, end))
-        m = (sel.gps >= a) & (sel.gps <= b)
-        ok = m & (sel.gps + TAIL / 2 <= block_end) & (sel.gps >= a + LEAD)
+        ok = (sel.gps >= a + LEAD) & (sel.gps + TAIL / 2 <= block_end)
         keep |= ok.values
     dropped = int((~keep).sum())
     sel = sel[keep].reset_index(drop=True)

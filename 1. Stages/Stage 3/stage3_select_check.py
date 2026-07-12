@@ -40,13 +40,18 @@ def main() -> int:
 
     # confidence + class rules, re-checked against the raw CSV
     df = pd.read_csv(CSV, usecols=["peak_time", "peak_time_ns", "ml_label", "ml_confidence"])
-    df["gps"] = df.peak_time + df.peak_time_ns * 1e-9
-    csv_by_gps = df.set_index(df.gps.round(6))
-    sel_rows = csv_by_gps.loc[np.round(gps, 6)]
+    df["gps"] = (df.peak_time + df.peak_time_ns * 1e-9).round(6)
+    # the CSV holds rows with duplicate times — verify by (gps, label) membership, and
+    # take the max confidence among duplicates for the confidence gate
+    pairs = set(zip(df.gps, df.ml_label))
+    have = all((g, l) in pairs for g, l in zip(np.round(gps, 6), names))
     results.append(("every selected glitch exists in the CSV with matching label",
-                    bool((sel_rows.ml_label.values == names).all()), "label mismatch"))
-    results.append(("confidence >= 0.9 for all", bool((sel_rows.ml_confidence >= MIN_CONF).all()),
-                    f"min {sel_rows.ml_confidence.min():.3f}"))
+                    have, "label mismatch"))
+    confmax = df[df.ml_confidence >= MIN_CONF]
+    conf_pairs = set(zip(confmax.gps, confmax.ml_label))
+    conf_ok = all((g, l) in conf_pairs for g, l in zip(np.round(gps, 6), names))
+    results.append(("confidence >= 0.9 for all (per the CSV, not the selector)", conf_ok,
+                    "a low-confidence specimen slipped in"))
     results.append(("no dropped class present", not bool(np.isin(names, DROP_CLASSES).any()),
                     "a Chirp/No_Glitch slipped in"))
     over = [(c, n) for c, n in pd.Series(names).value_counts().items() if n > cap]
