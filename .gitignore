@@ -32,6 +32,12 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 
+# --- Claude Code ---
+# Worktrees are full checkouts of the vault living inside the vault. Committing them
+# would nest a duplicate copy of every note in the repo — and obsidian-git's `add -A`
+# would do it automatically, without asking.
+.claude/worktrees/
+
 # --- OS ---
 .DS_Store
 Thumbs.db

@@ -2,7 +2,7 @@
 tags: [project, ligo, machine-learning, brainstorm]
 status: planned
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # LIGO Gravitational Wave Signal Classifier
@@ -100,16 +100,24 @@ pip install "igwn-segments==2.0.0" gwpy matplotlib
 
 *(Caveat: both machines have 16 GB, so the RAM squeeze + lazy-HDF5 rule applies either way — not a reason to prefer one box.)*
 
-### Setup (PC, Stages 1–4)
+### Setup (PC, Stages 1–4) — ✅ **DONE 2026-07-12**
+Full record, with the two places this sketch turned out to be wrong: **[[Setup - Desktop PC]]**.
+
 ```bash
-wsl --install                      # from PowerShell, then reboot
-# inside WSL2 — CUDA toolkit ONLY, no driver:
-#   follow https://docs.nvidia.com/cuda/wsl-user-guide/  (wsl-ubuntu packages)
-python3 -m venv ~/venvs/ligo && source ~/venvs/ligo/bin/activate
-pip install gwpy pycbc numpy scipy matplotlib h5py
-pip install torch --index-url https://download.pytorch.org/whl/cu124
+wsl --install                      # platform only — then ALSO: wsl --install -d Ubuntu
+# NO CUDA toolkit needed: torch's wheels bundle their own CUDA runtime.
+# (The toolkit only gives you nvcc, for compiling custom kernels. We compile none.)
+
+# Ubuntu 26.04 ships Python 3.14, and pycbc has NO 3.14 wheel → pin the venv to 3.13:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv --python 3.13 ~/venvs/ligo && source ~/venvs/ligo/bin/activate
+uv pip install gwpy pycbc numpy scipy matplotlib h5py scikit-learn tqdm torch
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
+Result: **Ubuntu 26.04**, CPython **3.13.14**, torch **2.13.0+cu130** → `True NVIDIA GeForce RTX 3070`,
+lal **7.7.1**, pycbc **2.11.0**. *(No `--index-url` pin on torch — plain PyPI torch on Linux is already
+the CUDA build, and it picks a build that suits driver 596.49 better than cu124 would.)*
+
 (Heavyweight alternative: the official **IGWN conda distribution**, which ships gwpy/pycbc/lalsuite/bilby pre-integrated.)
 
 ---
@@ -140,7 +148,8 @@ Each stage produces a result we can look at.
     - Q-transform shows the textbook upward sweep (~35 → 250 Hz) cutting off at merger, in **both** detectors.
     - H1/L1 overlay lines up after shifting L1 by **+6.9 ms** and **inverting** it. That inter-detector coincidence is the argument for a **2-channel CNN input** later.
     - Correct merger GPS is **1126259462.423** (not `.4` — that puts the chirp 23 ms off-center).
-- [ ] **Stage 1 — the MVP.** *Simulated Gaussian* noise + injections → 1D CNN → ROC as a function of injected SNR. Reproduce the Gabbard figure. Should land near matched filtering; that's the "it works" signal. **Plan: [[Stage 1]]** — gated on [[Setup - Desktop PC]].
+- [ ] **Stage 1 — the MVP. ▶️ READY TO START** — the [[Setup - Desktop PC]] gate **passed 2026-07-12** (WSL2 + CUDA + `lalsuite` all verified on the PC).
+    *Simulated Gaussian* noise + injections → 1D CNN → ROC as a function of injected SNR. Reproduce the Gabbard figure. Should land near matched filtering; that's the "it works" signal. **Plan: [[Stage 1]]**.
 - [ ] **Stage 2 — where it gets real.** Swap simulated noise for **real O3 noise segments**. **Expect performance to drop.** Understanding *why* is the project.
 - [ ] **Stage 3 — hard negatives.** Add Gravity Spy glitches as a negative class. Now report false-alarm rate. This is where the CNN has a genuine shot at beating MF *in practice*, because glitches are exactly what break MF's assumptions.
 - [ ] **Stage 4 — the benchmark.** Matched-filter baseline via `pycbc.filter.matched_filter`, compared **at equal false-alarm rate** — not at equal accuracy.

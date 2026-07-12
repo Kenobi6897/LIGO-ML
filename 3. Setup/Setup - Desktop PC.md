@@ -20,9 +20,28 @@ means WSL2, which means CUDA passthrough. The laptop only ever needed the vault.
 Do Part 1 first — it's five minutes and gets your notes syncing. Parts 2–4 are the long pole and
 can wait for a separate sitting.
 
-> [!tip]- 👉 RESUME HERE — updated 2026-07-11 on the PC, **after** the `wsl --install` reboot
-> **Where we actually are: Part 1 is done. The reboot landed — but it left no distro.** Parts 3–4 untouched.
-> [[Stage 1]] is still **gated shut**, though the blocker has narrowed to one step.
+> [!success] ✅ **SETUP COMPLETE — 2026-07-12. This note is finished; go to [[Stage 1]].**
+> All four "Done when" checks are green on the PC (`DESKTOP-P6POAN4`). **The [[Stage 1]] gate is open.**
+>
+> | Check | Result |
+> |---|---|
+> | Vault sync both ways, automatic | ✅ obsidian-git + Claude auto-pull hook, both observed |
+> | Ubuntu in WSL2 | ✅ **26.04 LTS**, kernel 6.18.33.2, ~9.7 GiB (cap applied) |
+> | `nvidia-smi` inside WSL2 | ✅ RTX 3070, driver 596.49 — **no CUDA toolkit installed** |
+> | `torch.cuda.is_available()` | ✅ `True`, torch **2.13.0+cu130**, GPU `conv1d` ran |
+> | `import lal, lalsimulation` | ✅ lal **7.7.1**, pycbc **2.11.0** |
+>
+> **Two things here contradict the plan below — the plan was wrong, not the result:**
+> 1. **The CUDA toolkit was never installed and isn't needed.** Torch's wheels bundle their own CUDA
+>    runtime; the toolkit is only for `nvcc`. See Part 2.
+> 2. **The venv is Python 3.13, not the system 3.14** — `pycbc` has no 3.14 wheel. See Part 3.
+>
+> The venv: `source ~/venvs/ligo/bin/activate`.
+
+> [!tip]- 🕐 Superseded — the 2026-07-11 "RESUME HERE" callout (kept for history)
+> **Where we were: Part 1 done. The reboot landed — but it left no distro.** Parts 3–4 untouched.
+> [[Stage 1]] was still **gated shut**, though the blocker had narrowed to one step.
+> *(All resolved on 2026-07-12 — see the success callout above.)*
 >
 > **What the reboot actually achieved** (verified, not assumed — `wsl --version`):
 > - WSL **2.7.10**, kernel **6.18.33.2**, WSLg 1.0.73.2 — the platform is fully in place.
@@ -184,15 +203,15 @@ can wait for a separate sitting.
       **6.18.33.2**, WSLg 1.0.73.2. The Windows features are active; no further reboot is needed.*
       *Not a dual-boot:* no bootloader entry, no partition, no boot menu.
 
-- [ ] **Install a distro.** The step above installed the *platform* but **left no distribution
-      behind** — `wsl -l -v` on the PC (2026-07-11) reports *"Windows Subsystem for Linux has no
-      installed distributions."* These are two separate things, and it is easy to read the first as
-      the second. **This is now the sole blocker on all of [[Stage 1]].**
+- [x] **Install a distro.** The step above installed the *platform* but **left no distribution
+      behind** — these are two separate things, and it is easy to read the first as the second.
       ```powershell
       wsl --install -d Ubuntu
       ```
       Ubuntu asks for a Linux username + password on first launch — unrelated to your Windows login.
       No reboot required.
+      *✅ Done 2026-07-12. **Ubuntu 26.04 LTS**, WSL2, kernel 6.18.33.2, Linux user `locke`.
+      `free` reports ~9.7 GiB → the `.wslconfig` cap applied from first boot, as intended.*
 
 - [x] **Cap WSL2 memory before anything else.** The PC has 16 GB and WSL2 grabs up to half by
       default, while the dataset is what actually wants RAM. Create `%UserProfile%\.wslconfig`:
@@ -204,42 +223,85 @@ can wait for a separate sitting.
       *Done 2026-07-11 — written to `C:\Users\locke\.wslconfig` **before** `wsl --install`, so it
       applies from WSL's first boot and no `wsl --shutdown` is needed. (Confirmed 16 GB physical.)*
 
-- [ ] **Install the CUDA toolkit inside WSL2** using NVIDIA's **`wsl-ubuntu`** packages, which are
-      built to skip the driver: https://docs.nvidia.com/cuda/wsl-user-guide/index.html
-      Do not substitute the generic Linux CUDA package — that's the footgun above, wearing a hat.
+- [~] **Install the CUDA toolkit inside WSL2** — **turned out to be UNNECESSARY. Skipped, deliberately.**
+      The plan was NVIDIA's `wsl-ubuntu` packages (https://docs.nvidia.com/cuda/wsl-user-guide/index.html),
+      built to skip the driver. We installed **nothing**, and CUDA works anyway.
 
-- [ ] **Confirm passthrough works** before installing anything else:
+      **Why it isn't needed:** PyTorch's Linux wheels **bundle their own CUDA runtime** (they pull
+      `nvidia-*` libs as pip dependencies — that's most of the ~3.5 GB download). The system CUDA
+      toolkit only provides `nvcc`, for *compiling* custom CUDA kernels. This project compiles none:
+      it calls `conv1d`, which ships precompiled inside torch.
+      *Verified 2026-07-12: `torch.cuda.is_available()` is `True` with no toolkit installed.*
+
+      > If a future stage ever needs `nvcc` (custom kernels — unlikely here), install it **then**,
+      > and only via `wsl-ubuntu`. The danger callout above still stands: **never a Linux driver.**
+
+- [x] **Confirm passthrough works** before installing anything else:
       ```bash
       nvidia-smi          # should report the RTX 3070
       ls /usr/lib/wsl/lib # should contain libcuda.so.1
       ```
       If `nvidia-smi` fails here, stop and fix it. Everything downstream depends on it.
+      *✅ 2026-07-12 — `nvidia-smi` inside WSL2 reports **RTX 3070**, driver **596.49**, CUDA 13.2.
+      `/usr/lib/wsl/lib` holds `libcuda.so.1` + the D3D12/dxcore stubs. **Straight after the distro
+      install, with zero CUDA packages added** — the passthrough chain is entirely the Windows
+      driver's doing, which is exactly why installing a Linux driver would break it.*
 
 ---
 
 ## Part 3 — Python environment (inside WSL2)
 
-- [ ] Create the venv and install the stack:
+> [!warning] ⚠️ Ubuntu 26.04 ships **Python 3.14**, and **`pycbc` has no 3.14 wheel**
+> The recipe originally written here — `python3 -m venv` on the system interpreter — **does not work**,
+> for two independent reasons discovered on 2026-07-12:
+>
+> 1. **`python3 -m venv` fails outright.** Ubuntu splits venv into a separate `python3-venv` package
+>    that isn't installed, and installing it means `sudo apt update` first.
+> 2. **The bigger one: `pycbc` publishes wheels only up to `cp313`.** On 3.14 pip falls back to
+>    building it from source, which needs a full C toolchain and is a yak-shave sitting directly on
+>    the critical path. **`lalsuite` and `torch` both *do* ship 3.14 wheels — pycbc is the lone holdout**,
+>    so this constraint may quietly lift in a release or two. Re-check before working around it again.
+>
+> **Fix: pin the venv to Python 3.13 via [uv](https://docs.astral.sh/uv/)**, which downloads a
+> standalone CPython — no `sudo`, no apt, no PPA, and the interpreter can't drift under us on a
+> future Ubuntu upgrade.
+
+- [x] Create the venv on **Python 3.13** and install the stack:
       ```bash
-      python3 -m venv ~/venvs/ligo && source ~/venvs/ligo/bin/activate
-      pip install gwpy pycbc numpy scipy matplotlib h5py scikit-learn tqdm
-      pip install torch --index-url https://download.pytorch.org/whl/cu124
+      curl -LsSf https://astral.sh/uv/install.sh | sh     # no sudo needed
+      export PATH="$HOME/.local/bin:$PATH"
+      uv venv --python 3.13 ~/venvs/ligo
+      VIRTUAL_ENV=~/venvs/ligo uv pip install gwpy pycbc numpy scipy matplotlib h5py scikit-learn tqdm torch
       ```
       (`scikit-learn` for ROC/AUC — [[Stage 1]] evaluates on ROC, *not* accuracy, so it isn't
       optional. `tqdm` because dataset generation is a long loop and you want a progress bar.)
 
-- [ ] **Confirm PyTorch sees the GPU:**
+      *✅ Done 2026-07-12 — CPython **3.13.14**. Activate with `source ~/venvs/ligo/bin/activate`.*
+
+      **Note the `torch` line changed.** The old recipe pinned `--index-url .../whl/cu124`. Dropped:
+      plain PyPI `torch` on Linux **is** the CUDA build, and it resolved to **`2.13.0+cu130`**, which
+      suits driver 596.49 (CUDA 13.2) better than cu124 would. Don't reinstate the pin.
+
+- [x] **Confirm PyTorch sees the GPU:**
       ```bash
       python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
       ```
       Expect `True NVIDIA GeForce RTX 3070`. `False` means Part 2 isn't actually done, regardless
       of what `nvidia-smi` said.
+      *✅ 2026-07-12 — `True NVIDIA GeForce RTX 3070`, torch `2.13.0+cu130`. Went one step further than
+      this box asks and ran a real `conv1d` over a **Stage-1-shaped batch** — `(256, 1, 2048) → (256, 16, 1985)`
+      — on the GPU. "CUDA is available" and "CUDA can run our kernel" are different claims; both now hold.*
 
-- [ ] **Confirm `lalsuite` imports** — this is the entire reason for WSL2, so verify it directly
+- [x] **Confirm `lalsuite` imports** — this is the entire reason for WSL2, so verify it directly
       rather than assuming pycbc pulled it in cleanly:
       ```bash
       python -c "import lal, lalsimulation; print('lalsuite ok')"
       ```
+      *✅ 2026-07-12 — `lal` **7.7.1**, `lalsimulation` imports clean. **pycbc 2.11.0**, gwpy 4.0.1.
+      Also confirmed the specific Stage 1 imports resolve: `get_td_waveform`, `aLIGOZeroDetHighPower`,
+      `noise_from_psd`, `filter.sigma`.*
+      *(Harmless: pycbc emits `SyntaxWarning: invalid escape sequence` from its own docstrings on 3.13.
+      Cosmetic, upstream, not ours.)*
 
 *(Heavyweight alternative if the pip route fights you: the official IGWN conda distribution ships
 gwpy/pycbc/lalsuite/bilby pre-integrated — https://computing.docs.ligo.org/conda/)*
@@ -265,11 +327,12 @@ decisions change constantly, because that's where the leakage bugs live.
 ## Done when
 
 - [x] Notes edited on either machine show up on the other without manual git commands. ✅ 2026-07-11
-- [ ] `nvidia-smi` reports the 3070 from inside WSL2.
-- [ ] `torch.cuda.is_available()` is `True`.
-- [ ] `import lal` works.
+- [x] `nvidia-smi` reports the 3070 from inside WSL2. ✅ 2026-07-12 — driver 596.49, no toolkit needed
+- [x] `torch.cuda.is_available()` is `True`. ✅ 2026-07-12 — torch 2.13.0+cu130, GPU `conv1d` ran
+- [x] `import lal` works. ✅ 2026-07-12 — lal 7.7.1, pycbc 2.11.0
 
-At that point the PC is ready for **Stage 1** and this note can be archived.
+✅ **All four green as of 2026-07-12. The PC is ready for [[Stage 1]]; this note is done.**
+The only Part 4 item left is `mkdir -p ~/ligo-data`, which belongs to Stage 1's first step anyway.
 
 Stage 0 (pull GW150914, whiten, bandpass, see the chirp) needs none of this — it's pure
 gwpy/scipy and runs natively on Windows, on the laptop, today.

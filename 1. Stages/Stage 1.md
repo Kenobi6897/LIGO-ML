@@ -1,7 +1,6 @@
 ---
 tags: [ligo, machine-learning, stage-1, plan]
-status: blocked
-blocked-by: "No WSL2 distro — platform is installed, Ubuntu is not. See [[Setup - Desktop PC]] Part 2"
+status: ready
 created: 2026-07-11
 updated: 2026-07-12
 parent: "[[GW Signal Classifier - Brainstorm]]"
@@ -21,46 +20,38 @@ parent: "[[GW Signal Classifier - Brainstorm]]"
 
 ## 0. Setup — what you need on the PC
 
-### 🚧 Gate: [[Setup - Desktop PC]] must be finished first
-Stage 1 cannot start until all four of these are true. **Verify them, don't assume them:**
+### ✅ Gate: [[Setup - Desktop PC]] — **PASSED 2026-07-12. Stage 1 is unblocked.**
 
-> [!failure] Gate re-checked on the PC (`DESKTOP-P6POAN4`), **2026-07-12** — **still FAILS, single blocker unchanged**
+> [!success] Gate run on the PC (`DESKTOP-P6POAN4`), 2026-07-12 — **all checks green**
 > | Check | Result |
 > |---|---|
 > | RTX 3070 visible | ✅ driver 596.49 |
-> | WSL2 **platform** installed | ✅ **WSL 2.7.10**, kernel 6.18.33.2 — the reboot landed |
-> | WSL2 **distro** installed | ❌ **none registered** — `wsl -l -v` reports zero distributions |
-> | `torch.cuda.is_available()` | ⛔ blocked on the distro |
-> | `import lal` | ⛔ blocked on the distro |
-> | `.wslconfig` 10 GB cap | ✅ written pre-install |
+> | WSL2 platform + **distro** | ✅ **Ubuntu 26.04 LTS**, WSL 2.7.10, kernel 6.18.33.2 |
+> | `nvidia-smi` inside WSL2 | ✅ RTX 3070 — **with no CUDA toolkit installed** |
+> | `torch.cuda.is_available()` | ✅ `True` — torch **2.13.0+cu130** |
+> | GPU `conv1d`, Stage-1 shapes | ✅ `(256, 1, 2048) → (256, 16, 1985)` ran on the 3070 |
+> | `import lal, lalsimulation` | ✅ lal **7.7.1** · pycbc **2.11.0** · gwpy **4.0.1** |
+> | `.wslconfig` 10 GB cap | ✅ `MemTotal` ≈ 9.7 GiB |
 >
-> *(Not a gate item, but Part 1 is now fully closed: the Claude auto-pull hook was **observed firing**
-> on 2026-07-12. Vault sync is done; only the WSL2 chain remains.)*
->
-> **Blocker: no Linux distro.** `wsl --install -d Ubuntu` is **being run now (2026-07-12)** — result
-> not yet recorded. If you are reading this and the table above still says ❌, the install either
-> failed or was never reported back; re-run `wsl -l -v` before believing either. `wsl --install` did its job — the platform, kernel and WSLg are all
-> in place — but it left no distribution behind, so there is still nowhere to run `lalsuite`. The
-> remaining action is `wsl --install -d Ubuntu` (no reboot needed; it prompts for a Linux
-> username + password). Everything in Parts 2–4 still sits behind it, and since `lalsuite` has no
-> Windows wheels there is no version of Stage 1 that routes around it.
+> **Two deviations from the setup plan — the plan was wrong, the environment is right:**
+> - **The venv is Python 3.13.14, not the system 3.14.** Ubuntu 26.04 ships 3.14 and **`pycbc` has no
+>   3.14 wheel** (lalsuite and torch both do — pycbc is the lone holdout). The venv is pinned to 3.13
+>   via `uv`. **Don't "upgrade" it to the system interpreter** — that silently breaks pycbc.
+> - **No CUDA toolkit was installed, and none is needed.** Torch's wheels bundle their own CUDA
+>   runtime; the toolkit only supplies `nvcc`, and we compile no custom kernels.
 
 ```bash
+source ~/venvs/ligo/bin/activate                        # CPython 3.13.14, via uv
 nvidia-smi                                              # reports RTX 3070
 python -c "import torch; print(torch.cuda.is_available())"   # True
 python -c "import lal, lalsimulation; print('ok')"      # lalsuite imports
-cat /proc/meminfo | head -1                             # ~10GB, i.e. .wslconfig applied
+head -1 /proc/meminfo                                   # ~10GB, i.e. .wslconfig applied
 ```
 
-**`import lal` is the whole reason WSL2 exists.** If it fails, nothing below is possible — Windows has no `lalsuite` wheels.
+**`import lal` is the whole reason WSL2 exists.** If it ever stops working, nothing below is possible — Windows has no `lalsuite` wheels.
 
 ### ➕ Extra packages beyond the setup note
-[[Setup - Desktop PC]] Part 3 installs `gwpy pycbc numpy scipy matplotlib h5py torch`. Stage 1 also needs:
-
-```bash
-source ~/venvs/ligo/bin/activate
-pip install scikit-learn tqdm
-```
+✅ **Already installed** — `scikit-learn` (1.9.0) and `tqdm` went in with the Part 3 stack. Nothing to do here.
 
 - **`scikit-learn`** — `roc_curve` / `roc_auc_score`. We are explicitly *not* evaluating on accuracy ([[GW Signal Classifier - Brainstorm|see metrics]]), so this isn't optional.
 - **`tqdm`** — dataset generation is a long loop; you want a progress bar rather than a silent terminal.
