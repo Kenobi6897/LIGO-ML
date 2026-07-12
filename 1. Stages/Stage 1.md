@@ -3,7 +3,7 @@ tags: [ligo, machine-learning, stage-1, plan]
 status: blocked
 blocked-by: "No WSL2 distro — platform is installed, Ubuntu is not. See [[Setup - Desktop PC]] Part 2"
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -24,7 +24,7 @@ parent: "[[GW Signal Classifier - Brainstorm]]"
 ### 🚧 Gate: [[Setup - Desktop PC]] must be finished first
 Stage 1 cannot start until all four of these are true. **Verify them, don't assume them:**
 
-> [!failure] Gate re-checked on the PC (`DESKTOP-P6POAN4`), 2026-07-11 (post-reboot) — **still FAILS, but the blocker has narrowed**
+> [!failure] Gate re-checked on the PC (`DESKTOP-P6POAN4`), **2026-07-12** — **still FAILS, single blocker unchanged**
 > | Check | Result |
 > |---|---|
 > | RTX 3070 visible | ✅ driver 596.49 |
@@ -34,7 +34,12 @@ Stage 1 cannot start until all four of these are true. **Verify them, don't assu
 > | `import lal` | ⛔ blocked on the distro |
 > | `.wslconfig` 10 GB cap | ✅ written pre-install |
 >
-> **Blocker: no Linux distro.** `wsl --install` did its job — the platform, kernel and WSLg are all
+> *(Not a gate item, but Part 1 is now fully closed: the Claude auto-pull hook was **observed firing**
+> on 2026-07-12. Vault sync is done; only the WSL2 chain remains.)*
+>
+> **Blocker: no Linux distro.** `wsl --install -d Ubuntu` is **being run now (2026-07-12)** — result
+> not yet recorded. If you are reading this and the table above still says ❌, the install either
+> failed or was never reported back; re-run `wsl -l -v` before believing either. `wsl --install` did its job — the platform, kernel and WSLg are all
 > in place — but it left no distribution behind, so there is still nowhere to run `lalsuite`. The
 > remaining action is `wsl --install -d Ubuntu` (no reboot needed; it prompts for a Linux
 > username + password). Everything in Parts 2–4 still sits behind it, and since `lalsuite` has no

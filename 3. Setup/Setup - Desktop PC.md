@@ -2,7 +2,7 @@
 tags: [setup, ligo, machine-learning, checklist]
 status: in-progress
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # Setup — Desktop PC
