@@ -1,9 +1,9 @@
 ---
 tags: [ligo, machine-learning, stage-1, plan]
-status: in-progress
+status: done
 created: 2026-07-11
 updated: 2026-07-12
-progress: "Steps 1-4 done and checked. The real 100k dataset EXISTS (~/ligo-data/stage1.h5, 829 MB, 68 min) and passes all 17 checks — bit-exact rebuild, SNR calibrated to 0.995x, no variance leak. Both of Step 4's failures were real and neither was what the note first said. Next: Step 5, the 1D CNN."
+progress: "COMPLETE — all 7 steps done, every check green. Test AUC 0.9877; efficiency degrades at low SNR exactly as it must (0.50 at SNR 4-6 @ FAP 1e-2, below the Neyman-Pearson ceiling everywhere); fires on real GW150914 above all 112 background segments; 15/16 first-layer kernels peak in the analysis band. Best pre-paid Stage 2 fact: real O1 noise scores median logit +17.5 vs -3 on simulated negatives."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -255,26 +255,62 @@ The bisect is what named it — the error was **exactly zero on every negative a
 > [!tip] The lesson is about the tolerance, not the dtype
 > The tempting fix was `assert worst < 1e-4`. It would have passed, it would have looked reasonable, and it would have **thrown away the only check that can tell you your rows and your labels have come apart** — to hide a bug that was real. `10⁻⁵` was not round-off. It was the file honestly reporting that it had recorded a number the writer never used.
 
-### Step 5 — The 1D CNN
-Modest architecture — this is the Gabbard-class problem, not ImageNet:
+### ✅ Step 5 — The 1D CNN — `stage1_model.py` + `stage1_train.py`
+Modest architecture — this is the Gabbard-class problem, not ImageNet. **251,361 parameters:**
 ```
-Conv1d → BatchNorm → ReLU → MaxPool     (×3–4 blocks, widening)
-→ Flatten → Dense → Dropout → Dense(1)
+Conv1d → BatchNorm → ReLU → MaxPool(4)     (×3, widening 16 → 32 → 64)
+→ Flatten → Dense(128) → Dropout(0.5) → Dense(1)      # raw logit, no sigmoid
 ```
-- [ ] Binary cross-entropy, Adam
-- [ ] **Hold out real GW150914** as a sanity check — if the model can't fire on it, the model is broken
+The one architectural decision that wasn't generic: **the first kernel is 64 samples (31 ms)** — long enough to hold real oscillations (~1 cycle at 30 Hz, ~11 at 350 Hz), because Step 7 wants to read layer 1 as a template bank. Conv layers carry no bias (BatchNorm would silently absorb it), and there is **no per-segment input normalisation** — that's the variance leak; `condition()` already set the scale globally.
 
-### Step 6 — Evaluate (NOT on accuracy)
-- [ ] **ROC / AUC** — `sklearn.metrics`
-- [ ] **The money plot: detection efficiency (TPR) vs. injected SNR, at fixed false-alarm rate.** This is the Gabbard figure. Accuracy is meaningless here; a model that says "noise" always scores 50% and has learned nothing.
-- [ ] **Report FAR as false positives per hour of held-out noise** — *not* per year. We don't have the background to support a per-year claim, and faking one is worse than not making one.
+- [x] Binary cross-entropy (`BCEWithLogitsLoss`), Adam — **model selection on val AUC, never accuracy.** The test split is untouched until Step 6.
+- [x] **Hold out real GW150914** as a sanity check — **it fires.** See below.
 
-### Step 7 — The payoff figure 🎁
-- [ ] **Plot the first-layer conv kernels.**
+**Result: PASS — best val AUC 0.9872 (epoch 7; early-stopped at 13).** ~4 s/epoch on the 3070, **one minute of training total** — "minutes, not hours" was right. Textbook overfit curve after epoch 7 (train loss keeps falling, val loss turns); the checkpoint on disk is the epoch-7 model, at `~/ligo-data/stage1_cnn.pt` — weights are data, not code, and `.gitignore` refuses `*.pt`.
+
+![[5_training.png]]
+
+#### ✅ The GW150914 check — `stage1_gw150914.py`
+Real H1 strain from GWOSC (cached to `~/ligo-data/`), merger at GPS **1126259462.423** ([[Stage 0]]'s number). Conditioned with the exact Stage-1 recipe, with the one forced substitution: the whitening PSD is **Welch-measured on an off-source stretch** ([merger−256 s, merger−128 s]) — *never* the segment's own — and the same fixed filter is applied to the event and to 112 disjoint off-source background segments alike. The check: the event must outscore **every** background segment. An absolute p > 0.5 would be meaningless — the background sets the scale.
+
+**Result: PASS — event logit +33.7, above all 112 background segments (max +24.0).** A model trained purely on synthetic injections in synthetic noise fires on the first real black-hole merger ever observed.
+
+> [!warning] The number that matters is the background, and it's a Stage 2 fact measured early
+> On simulated test negatives the median logit is ≈ **−3**. On real O1 noise it is **+17.5** — the model finds *real detector noise* dramatically more signal-like than anything it trained on, and it's the event's ~10-logit margin over that inflated floor that saves the check. That one number is Stage 2's thesis measured in advance: swap Gaussian noise for real noise and the false-alarm floor rises before the signals get any louder. "Expect performance to drop" now has a mechanism attached.
+
+![[8_gw150914.png]]
+
+### ✅ Step 6 — Evaluate (NOT on accuracy) — `stage1_eval.py`
+- [x] **ROC / AUC** — `sklearn.metrics`. **Test AUC 0.9877** (10k held-out segments).
+- [x] **The money plot: detection efficiency (TPR) vs. injected SNR, at fixed false-alarm probability.** This is the Gabbard figure. Accuracy is meaningless here; a model that says "noise" always scores 50% and has learned nothing.
+- [x] **Report FAR as false positives per hour of held-out noise** — *not* per year. We don't have the background to support a per-year claim, and faking one is worse than not making one.
+
+**Thresholds are set on the val negatives and *measured* on the test negatives** — setting the threshold on the same segments you then report FAP on makes the number true by construction. They transfer cleanly (measured 1.08e-1 / 9.5e-3 / 6.0e-4 against targets 1e-1 / 1e-2 / 1e-3), and per hour of held-out noise (1.38 h of it): **389 / 34 / 2.2 false alarms per hour**.
+
+**Result: PASS on all four checks.** Efficiency at fixed FAP:
+
+| SNR bin | FAP 1e-1 | FAP 1e-2 | FAP 1e-3 |
+|---|---|---|---|
+| **4–6** | 0.775 | **0.499** | 0.308 |
+| 6–8 | 0.973 | 0.907 | 0.794 |
+| 8–10 | 0.997 | 0.992 | 0.969 |
+| 10–12 | 1.000 | 1.000 | 0.998 |
+| 12–20 | 1.000 | 1.000 | 1.000 |
+
+The curve **degrades at low SNR exactly like it should** — falling off a cliff below SNR 8, half-blind at SNR 4–6 — and sits **below the Neyman–Pearson ceiling everywhere** (the dashed lines: TPR = Φ(ρ − z), the optimal statistic for a *fully known* signal — no search beats it, so sitting above it would have been the leak alarm, per [[#🚩 The tell]]). Same ballpark as the [[GW Signal Classifier - Brainstorm|Gabbard figure]]: their efficiency collapse happens in the same SNR ≲ 8 regime. The honest apples-to-apples matched-filter *baseline* — template bank, unknown time — is [[GW Signal Classifier - Brainstorm|Stage 4]]'s job.
+
+![[6_eval.png]]
+
+### ✅ Step 7 — The payoff figure 🎁 — `stage1_kernels.py`
+- [x] **Plot the first-layer conv kernels.**
 
 A 1D convolution **is** a matched filter — it slides a kernel along the signal computing a dot product at each lag, which is exactly what correlating against a template does. So layer 1 is, functionally, **a learned template bank**.
 
-**You should see chirp-shaped filters the network invented on its own**, without ever being told what a black hole is. See [[1D vs 2D - decision explained]] — this is the single best figure this project will produce, and it's the reason we went 1D.
+**Result: PASS — 15 of 16 kernels have their spectral peak inside the analysis band** (random init would average ~6/16). The network moved its template bank into the band the signals live in, from labels alone, without ever being told what a black hole is. See [[1D vs 2D - decision explained]] — this figure is the reason we went 1D.
+
+Honesty about what the eye sees: the kernels are **band-limited oscillatory wavelets — chirp *snippets*, not whole chirps.** A 31 ms window physically cannot hold a 30→350 Hz sweep (~2 cycles fit at 60 Hz), so no single kernel can be "a chirp"; the bank covers the band *collectively*, low to high, the way a template bank covers a mass range, and the deeper layers assemble the sweep from these pieces. The figure ends with the same 31 ms of an actual conditioned chirp at merger for comparison — same character as the kernels: band-limited oscillation, rising frequency. The plot shows each kernel's 30–350 Hz component as the dark line: **the input is band-passed, so the out-of-band part of the weights is functionally inert** — data with no power there cannot excite it.
+
+![[7_kernels.png]]
 
 ---
 
@@ -337,13 +373,13 @@ The failure was **exactly zero on every negative and nonzero on every positive**
 
 ---
 
-## Done when
+## Done when — ✅ ALL DONE, 2026-07-12
 
-- [ ] Detection efficiency vs. SNR curve exists, and it **degrades at low SNR like it should**
-- [ ] ROC/AUC computed on a held-out set
-- [ ] FAR quoted in false positives **per hour**, honestly
-- [ ] The model fires on real **GW150914**
-- [ ] First-layer kernels plotted, and **they look like chirps**
-- [ ] Result is in the same ballpark as the [[GW Signal Classifier - Brainstorm|Gabbard reference]]
+- [x] Detection efficiency vs. SNR curve exists, and it **degrades at low SNR like it should** — 0.50 at SNR 4–6 @ FAP 1e-2, below the known-signal ceiling everywhere
+- [x] ROC/AUC computed on a held-out set — **test AUC 0.9877**, thresholds set on val, measured on test
+- [x] FAR quoted in false positives **per hour**, honestly — 389 / 34 / 2.2 FA/h on 1.38 h of held-out noise
+- [x] The model fires on real **GW150914** — logit +33.7, above all 112 off-source background segments
+- [x] First-layer kernels plotted, and **they look like chirps** — band-limited chirp *snippets* (31 ms can't hold a whole sweep); 15/16 peak in band vs ~6/16 for random init
+- [x] Result is in the same ballpark as the [[GW Signal Classifier - Brainstorm|Gabbard reference]] — efficiency collapse in the same SNR ≲ 8 regime
 
-→ Then **Stage 2**: swap simulated Gaussian noise for **real O3 noise**. Expect performance to drop. Understanding *why* is the actual project.
+→ Then **Stage 2**: swap simulated Gaussian noise for **real O3 noise**. Expect performance to drop. Understanding *why* is the actual project — **and we already hold the first clue: real O1 noise scores median logit +17.5 where simulated negatives score −3.** The false-alarm floor rises before the signals get any louder.

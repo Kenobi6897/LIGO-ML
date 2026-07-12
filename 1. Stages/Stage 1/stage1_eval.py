@@ -183,7 +183,10 @@ def main() -> int:
     rho = np.linspace(SNR_EDGES[0], SNR_EDGES[-1], 200)
     for fap, c in zip(FAPS, FAP_COLORS):
         t, lo, hi = eff[fap]
-        axm.errorbar(centres, t, yerr=[t - lo, hi - t], fmt="o-", color=c, lw=2,
+        # clip: at p = 1 the Wilson upper bound equals p to within float rounding,
+        # and errorbar refuses a -1e-16
+        yerr = [np.maximum(t - lo, 0), np.maximum(hi - t, 0)]
+        axm.errorbar(centres, t, yerr=yerr, fmt="o-", color=c, lw=2,
                      capsize=3, label=f"CNN @ FAP {fap:.0e}")
         axm.plot(rho, normal.cdf(rho - normal.ppf(1 - fap)), ls="--", color=c, lw=1.2,
                  alpha=0.7)

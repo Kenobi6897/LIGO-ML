@@ -1,6 +1,6 @@
 ---
 tags: [project, ligo, machine-learning, brainstorm]
-status: planned
+status: in-progress
 created: 2026-07-11
 updated: 2026-07-12
 ---
@@ -148,9 +148,9 @@ Each stage produces a result we can look at.
     - Q-transform shows the textbook upward sweep (~35 → 250 Hz) cutting off at merger, in **both** detectors.
     - H1/L1 overlay lines up after shifting L1 by **+6.9 ms** and **inverting** it. That inter-detector coincidence is the argument for a **2-channel CNN input** later.
     - Correct merger GPS is **1126259462.423** (not `.4` — that puts the chirp 23 ms off-center).
-- [ ] **Stage 1 — the MVP. ▶️ READY TO START** — the [[Setup - Desktop PC]] gate **passed 2026-07-12** (WSL2 + CUDA + `lalsuite` all verified on the PC).
-    *Simulated Gaussian* noise + injections → 1D CNN → ROC as a function of injected SNR. Reproduce the Gabbard figure. Should land near matched filtering; that's the "it works" signal. **Plan: [[Stage 1]]**.
-- [ ] **Stage 2 — where it gets real.** Swap simulated noise for **real O3 noise segments**. **Expect performance to drop.** Understanding *why* is the project.
+- [x] **Stage 1 — DONE (2026-07-12).** ✅ 100k injections in simulated design noise → 1D CNN (251k params, 1 min to train) → **test AUC 0.9877**, efficiency vs SNR degrades at low SNR like it must (0.50 at SNR 4–6 @ FAP 1e-2) and sits below the Neyman–Pearson ceiling everywhere — Gabbard ballpark. Fires on real **GW150914** (above all 112 off-source background segments). 15/16 first-layer kernels peak in the analysis band: the learned template bank is real. **Full write-up: [[Stage 1]].** Code + plots in `1. Stages/Stage 1/`, checkpoint + dataset on the PC.
+    - **Stage 2's first clue, already measured:** real O1 noise scores median logit **+17.5** where simulated negatives score **−3** — the model finds real detector noise far more signal-like than anything it trained on. The false-alarm floor rises before the signals get louder.
+- [ ] **Stage 2 — where it gets real. ▶️ NEXT** — swap simulated noise for **real O3 noise segments**. **Expect performance to drop.** Understanding *why* is the project.
 - [ ] **Stage 3 — hard negatives.** Add Gravity Spy glitches as a negative class. Now report false-alarm rate. This is where the CNN has a genuine shot at beating MF *in practice*, because glitches are exactly what break MF's assumptions.
 - [ ] **Stage 4 — the benchmark.** Matched-filter baseline via `pycbc.filter.matched_filter`, compared **at equal false-alarm rate** — not at equal accuracy.
 
