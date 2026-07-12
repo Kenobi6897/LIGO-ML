@@ -3,9 +3,10 @@ tags: [ligo, machine-learning, stage-2, plan]
 status: in-progress
 created: 2026-07-12
 updated: 2026-07-12
-progress: "Started 2026-07-12 — decisions pinned, build under way."
+progress: "2026-07-12 — decisions pinned; Steps 1-3 code written and ALL CHECKS GREEN on a 4-block smoke run against real O3 data (signal-blindness 4.7e-16, bit-exact rebuild 0.000e+00, SNR calibration 0.996). Full ~28 h fetch running in the background. Steps 4-6 next."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
+
 /us
 # Stage 2 — Real O3 noise. Where it gets real.
 
@@ -79,36 +80,58 @@ python stage2_fetch.py
 > Real data adds new silent failure modes (gaps, glitches in the PSD stretch, non-stationarity),
 > so if anything the checks matter more here.
 
-### Step 1 — Fetch real O3 noise — `stage2_fetch.py` + `stage2_fetch_check.py`
-- [ ] Query `H1_DATA` science segments from O3a start; veto ±128 s around every catalog event
-- [ ] Download in time order until ~197 data blocks exist; resample 4096 → 2048 Hz
-- [ ] Store per-block strain in `stage2_strain.h5` (float64 — conditioning stays in doubles)
-- [ ] **Check:** no NaNs/gaps, veto respected, every block inside a science segment; measured
-      O3 ASD plotted against `aLIGOZeroDetHighPower` — *the premise of the stage, visible*
+### 🟡 Step 1 — Fetch real O3 noise — `stage2_fetch.py` + `stage2_fetch_check.py`
+**Code done, smoke-green; the full ~28 h download is running.** GWOSC probe (2026-07-12):
+236.8 h of H1 science time in O3a's first 14 days, 6 distinct catalog events to veto,
+fetch rate ≈ one 4096 s file/min → the full pull is a ~40–70 min background job. The
+fetcher is **resumable** (`n_done` attr, atomic per-group writes) and fetches every group
+with 8 s of padding so the resample FIR's edge transient never lands inside a stored block.
+- [x] Query `H1_DATA` science segments from O3a start; veto ±128 s around every catalog event
+- [ ] Download in time order until ~197 data blocks exist; resample 4096 → 2048 Hz *(running)*
+- [x] Store per-block strain in `stage2_strain.h5` (float64 — conditioning stays in doubles)
+- [x] **Check:** no NaNs/gaps, veto respected, every block inside a science segment; measured
+      O3 ASD plotted against `aLIGOZeroDetHighPower` — *the premise of the stage, visible*.
+      **All 6 checks PASS on the smoke file** (4 data blocks); re-run on the full file when
+      the download lands.
 
-### Step 2 — Condition real noise — `stage2_condition.py` + `stage2_condition_check.py`
+![[1_fetch_check.png]]
+
+### 🟡 Step 2 — Condition real noise — `stage2_condition.py` + `stage2_condition_check.py`
 Port of [[Stage 1]]'s `condition()` with the design PSD replaced by the block's causal Welch
-PSD (interpolated to the buffer's Δf, 0.5 s inverse-spectrum truncation, 30–350 Hz zero-phase
-FIRs, central 1 s crop, one global scale).
-- [ ] **Check — signal-blindness:** `C(n₁+h) − C(n₁) == C(n₂+h) − C(n₂)` to machine precision
-      within a block (the operator is fixed per block, so linearity must be exact)
-- [ ] **Check — whitening quality:** conditioned real noise flat in band, std ≈ 1 from the one
-      global constant, across blocks *far* from where the constant was measured
-- [ ] **Measure — non-Gaussianity:** excess kurtosis and tail rate (|x| > 4σ, 5σ) of conditioned
-      real noise vs the Gaussian prediction. This is Stage 2's thesis at the data level: the
-      tails are where the false alarms will come from.
+PSD (median-averaged — one glitch in the PSD block can't drag the spectrum; interpolated to
+the buffer's Δf, 0.5 s inverse-spectrum truncation, 30–350 Hz zero-phase FIRs, central 1 s
+crop, one global scale). **Code done; all 3 checks PASS on the smoke file** — re-run on the
+full file before the real dataset build.
+- [x] **Check — signal-blindness:** `C(n₁+h) − C(n₁) == C(n₂+h) − C(n₂)` to machine precision
+      within a block — **measured 4.7×10⁻¹⁶ on real O3 noise.** The measured-PSD conditioner
+      is exactly as signal-blind as Stage 1's known-PSD one, because the PSD is causal.
+- [x] **Check — whitening quality:** flat in band (tilt 1.26 on smoke), std 1.001 from the one
+      global constant on blocks it was not measured on
+- [x] **Measure — non-Gaussianity:** on 4 smoke blocks already: excess kurtosis +0.032 vs
+      −0.000 simulated, and **P(|x| > 5σ) = 1.1×10⁻⁵ — twenty times the Gaussian rate**
+      (5.7×10⁻⁷). The tails are real, measured, and waiting for the model. Full-file numbers
+      to follow.
 
-### Step 3 — Write the dataset — `stage2_dataset.py` + `stage2_data.py` + `stage2_dataset_check.py`
+![[2_condition_check.png]]
+
+### 🟡 Step 3 — Write the dataset — `stage2_dataset.py` + `stage2_data.py` + `stage2_dataset_check.py`
 Per crop: take the block's raw strain buffer → (if positive) inject a waveform scaled to a
 target SNR against the block's PSD → condition → store the central 2048 samples. Identical
-call for both classes. Same HDF5 schema as Stage 1 plus `block_id` and `gps`.
-- [ ] Parent draws all specs up front (dataset depends only on the seed, not worker count)
-- [ ] Waveform parameters stored **float64** — Stage 1's bit-exact-rebuild lesson stands
-- [ ] **Check:** structure; time-ordered splits verified; **bit-exact rebuild** of stored rows
-      from `stage2_strain.h5` + metadata; **SNR calibration via the empirical-background ρ
-      statistic** (correlate conditioned template against conditioned negatives from the same
-      block — Stage 1's fix, which assumed nothing about the noise, ports unchanged *because*
-      it assumed nothing about the noise)
+call for both classes. Same HDF5 schema as Stage 1 plus `block`, `offset`, `gps`. **Code
+done; all 10 checks PASS on a 2,036-crop smoke dataset built from real O3 blocks** at
+23 seg/s — the full 100k build is a ~70 min job once the fetch lands.
+- [x] Parent draws all specs up front (dataset depends only on the seed, not worker count) —
+      and touches neither the strain file nor an FFT before forking (Stage 1's FFTW-fork
+      deadlock + the h5py-handle-across-fork rule; workers get a fork-hygiene initializer)
+- [x] Waveform parameters stored **float64** — Stage 1's bit-exact-rebuild lesson stands
+- [x] **Check:** structure; time-ordered splits verified (train < val < test in GPS, checked
+      on every row); **bit-exact rebuild — max|Δ| = 0.000e+00 exactly** on smoke; **SNR
+      calibration via the empirical-background ρ statistic: median 0.996** (5–95%
+      0.888–1.101), and the stored-row statistic comes back ρ + N(0,1) → **+0.04 ± 1.07** —
+      Stage 1's fix ported unchanged *because* it assumed nothing about the noise
+- [ ] Run the real ~100k build (after the fetch completes + full-file Steps 1–2 checks)
+
+![[3_dataset_check.png]]
 
 ### Step 4 — The transfer measurement — `stage2_transfer.py` 🎯
 **The headline number.** Score the *Stage 1 checkpoint*, untouched, on the Stage 2 test split.
