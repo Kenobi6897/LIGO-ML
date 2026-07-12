@@ -1,0 +1,15 @@
+# Stage 0 — native Windows, no WSL, no GPU, no lalsuite.
+#
+# The pin is load-bearing. Plain `pip install gwpy` FAILS on native Windows: gwpy pulls
+# igwn-segments, pip resolves to 2.1.1, which ships source-only, tries to compile a C
+# extension, and dies on "Microsoft Visual C++ 14.0 or greater is required."
+#
+# 2.0.0 has a prebuilt cp313-win_amd64 wheel and gwpy only requires >=2.0.0, so pinning
+# it avoids 6 GB of MSVC Build Tools. Not an issue in WSL2 — Linux gets current wheels.
+igwn-segments==2.0.0
+
+gwpy
+matplotlib
+numpy
+scipy
+h5py
