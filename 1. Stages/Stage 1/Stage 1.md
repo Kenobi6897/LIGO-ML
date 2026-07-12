@@ -183,24 +183,24 @@ In the right-hand panel the two chirps (green, black-dashed) lie exactly on top 
 > [!note] The demo has to survive a hostile reading
 > The first version of this test compared against `C(h)` — the whitener applied to a **pure signal with no noise**. It "failed" the leaky whitener by a factor of 10¹⁰, which was flattering and meaningless: no detector ever produces a noiseless signal, and a per-segment whitener is undefined on one. The version above only ever feeds both operators inputs the real pipeline actually sees. It is a weaker-looking number and a much stronger claim.
 
-### 🚧 Step 4 — Write the dataset — **IN PROGRESS**
+### ✅ Step 4 — Write the dataset — `stage1_dataset_check.py`
 Per segment: generate a **4 s** noise buffer → (if positive) inject a waveform scaled to a target SNR → `condition()` → store the central **2048** samples. Positives and negatives go through the identical call.
 
-**Code written, writer runs, check is red.** Three files:
+**Result: PASS — all 17 checks.** Both of the failures logged here earlier turned out to be real, and **neither was the thing the note said it was.** Written up below, because being wrong twice in the same predictable direction is the most useful thing in this file. Three files:
 
 | file | what it is |
 |---|---|
 | `stage1_dataset.py` | the writer — `multiprocessing` over 16 workers, streams into HDF5 |
 | `stage1_data.py` | `Stage1Dataset` — the lazy torch `Dataset` the CNN will train on |
-| `stage1_dataset_check.py` | the check that can fail. **Currently failing — see below.** |
+| `stage1_dataset_check.py` | the check that can fail. **Green: structure, bit-exact rebuild, SNR calibration, no variance leak.** |
 
 - [x] HDF5 at `~/ligo-data/stage1.h5`, arrays `X` (N, 1, 2048) and `y` (N,)
 - [x] **Lazy load in `Dataset.__getitem__`.** Handle opened per-process on first read, never in `__init__` — an open h5py handle can't be pickled to a `DataLoader` worker, and one inherited across a fork is unsafe to read concurrently.
 - [x] Also store **per-segment SNR** and masses — plus `merger_pos`, the noise `seed`, and `split`. You need SNR at eval time and cannot recover it later.
 - [x] Parallelise generation with `multiprocessing` — 16 threads on the 3700X.
 - [x] **SNR calibration green** — the x-axis of the money plot is verified. See below.
-- [ ] ⚠️ **Get the check green.** One open failure: the bit-exact rebuild.
-- [ ] Run the real 100k.
+- [x] ⚠️ **Get the check green.** **All 17 checks pass**, including the bit-exact rebuild.
+- [x] Run the real 100k.
 
 **Throughput:** 19 seg/s on the smoke run → **100k is ~90 min**, not the few minutes the plan assumed. Worth a look before committing to it; ~20 s of that is per-worker warm-up (each worker recomputes `_norm()` and its PSDs).
 
@@ -236,11 +236,21 @@ Numerator and denominator carry the same arbitrary scale and see the same band, 
 ![[4_dataset_check.png]]
 *Top-right is the one that matters. Blue = the signal in the CNN's input, on the ideal line. Orange = the same signal measured off the stored row, scattering about it by exactly 1. (From the 2k smoke dataset — regenerate this from the real 100k.)*
 
-#### 🔴 (a) Rebuild is not bit-exact — still open
-Rebuilding a stored row from its metadata alone (seed, masses, SNR, merger position) reproduces it to `max|Δ| = 6.1×10⁻⁶`, not `0`. On a segment whose std is 1.0 that's a **relative 10⁻⁶–10⁻⁵ — too big for float32 round-off** (~10⁻⁷). Suspicion is FFTW planning differing between a Pool worker and the main process, but **that is a guess and it has not been demonstrated.** Do not relax the tolerance to make this pass until the cause is known — a writer that shuffled rows, or a parameter that never made it into the segment, would look exactly like this.
+#### ✅ (a) Rebuild is not bit-exact — **FIXED. The file was recording the wrong number.**
+Rebuilding a stored row from its metadata alone reproduced it to `max|Δ| = 6.1×10⁻⁶`, not `0`.
 
-> [!warning] This failure is not cosmetic
-> It is the check that says *the file is what the code claims it is*. Until it's green, nothing rules out a writer whose rows and labels have come apart.
+**The FFTW-planning theory was wrong.** It was never tested, and it does not survive being tested: forked `Pool` workers and the main process agree **bit-for-bit** on the noise, the waveform, `_norm()`, `condition()`, and the whole segment. Zero, not 10⁻¹⁵. That theory had been sitting in this note as the explanation for a day.
+
+**The actual cause: the metadata was stored as `float32`.** The writer draws parameters in float64 and builds from them — but wrote `m1/m2/snr/merger_pos` to HDF5 as `f4`. So the check rebuilt from a mass of `44.02118682861328` where the writer had used `44.0211878409138`. **That is a different waveform**, and it reproduces the row to ~10⁻⁵ rather than to zero.
+
+The bisect is what named it — the error was **exactly zero on every negative and nonzero on every positive.** Negatives have no waveform parameters, so nothing to round. An FFT or a threading difference could not possibly know the label.
+
+**The fix: store the parameters as `float64`** — at the precision they were *used*. X stays `float32`, because X is *data*; the parameters are the **inputs to a function we intend to rerun**, and 1.6 MB across 100k segments is nothing. `stage1_dataset_check.py` now also asserts the on-disk dtype, so a regression to `f4` says so in one line instead of coming back as an unexplained 10⁻⁵.
+
+**Result: PASS — `max|rebuilt - stored| = 0.000e+00`, exactly.**
+
+> [!tip] The lesson is about the tolerance, not the dtype
+> The tempting fix was `assert worst < 1e-4`. It would have passed, it would have looked reasonable, and it would have **thrown away the only check that can tell you your rows and your labels have come apart** — to hide a bug that was real. `10⁻⁵` was not round-off. It was the file honestly reporting that it had recorded a number the writer never used.
 
 ### Step 5 — The 1D CNN
 Modest architecture — this is the Gabbard-class problem, not ImageNet:

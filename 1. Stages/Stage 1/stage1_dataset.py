@@ -5,15 +5,23 @@ through the *identical* call. The output is `~/ligo-data/stage1.h5`:
 
     X          (N, 1, 2048) float32   the CNN's input — conditioned strain
     y          (N,)         int8      1 = signal + noise, 0 = noise
-    snr        (N,)         float32   injected optimal SNR in band (0.0 for negatives)
-    m1, m2     (N,)         float32   component masses, Msun (0.0 for negatives)
-    merger_pos (N,)         float32   merger location as a fraction of the 1 s crop
+    snr        (N,)         float64   injected optimal SNR in band (0.0 for negatives)
+    m1, m2     (N,)         float64   component masses, Msun (0.0 for negatives)
+    merger_pos (N,)         float64   merger location as a fraction of the 1 s crop
     seed       (N,)         int64     the noise realisation — unique across the dataset
     split      (N,)         int8      0 = train, 1 = val, 2 = test
 
 Everything except X is metadata you cannot recover later and will need at eval time.
 `snr` above all: it is the x-axis of the money plot (efficiency vs. SNR), and there is no
 way to reconstruct it from a conditioned segment after the fact.
+
+THE PARAMETERS ARE STORED AT THE PRECISION THEY WERE USED — float64, not float32.
+X is float32 because it is *data*; the parameters are float64 because they are the *inputs
+to a function we intend to rerun*. Storing a 44.0211878409138 Msun draw as float32 rounds
+it to 44.02118682861328, which is a different waveform: rebuilding from it reproduces the
+row to ~1e-5, not to 0, and the bit-exact check in stage1_dataset_check.py fails with a
+number small enough to be mistaken for round-off. It is not round-off — it is a record of
+the wrong number. 1.6 MB across the whole dataset buys a reproducibility check with teeth.
 
 WHAT ONE SEGMENT IS
     4 s of coloured Gaussian noise  ->  (if positive) inject a waveform scaled to a target
@@ -249,9 +257,12 @@ def main() -> int:
         if fill:
             X[base : base + fill] = buf[:fill]
 
+        # f8 for every waveform parameter — see "THE PARAMETERS ARE STORED AT THE PRECISION
+        # THEY WERE USED" in the module docstring. f4 here silently breaks the bit-exact
+        # rebuild, because a float32 mass is a different waveform.
         for name, dtype in [
-            ("y", "i1"), ("seed", "i8"), ("m1", "f4"), ("m2", "f4"),
-            ("snr", "f4"), ("merger_pos", "f4"), ("split", "i1"),
+            ("y", "i1"), ("seed", "i8"), ("m1", "f8"), ("m2", "f8"),
+            ("snr", "f8"), ("merger_pos", "f8"), ("split", "i1"),
         ]:
             src = specs.label if name == "y" else specs[name]
             f.create_dataset(name, data=np.asarray(src, dtype=dtype))

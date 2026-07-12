@@ -144,6 +144,14 @@ def main() -> int:
         pos, neg = y == 1, y == 0
         checks.append(("X shape (N,1,2048)", X.shape == (n, 1, CROP_N), str(X.shape)))
         checks.append(("X dtype float32", X.dtype == np.float32, str(X.dtype)))
+
+        # The parameters must be stored at the precision they were USED, or check [2] below
+        # cannot be bit-exact: a float32 mass is a different waveform. This check exists so
+        # that a regression to f4 says so, instead of resurfacing as an unexplained 1e-5.
+        param_dtypes = {k: f[k].dtype for k in ("m1", "m2", "snr", "merger_pos")}
+        checks.append(("waveform params stored float64",
+                       all(d == np.float64 for d in param_dtypes.values()),
+                       ", ".join(f"{k} {d}" for k, d in param_dtypes.items())))
         checks.append(("50/50 balance", pos.sum() == neg.sum() == n // 2,
                        f"{pos.sum():,}+ / {neg.sum():,}-"))
 
@@ -201,7 +209,7 @@ def main() -> int:
         specs_match = bool(
             np.array_equal(specs.label.astype(np.int8), y)
             and np.array_equal(specs.seed.astype(np.int64), seed)
-            and np.allclose(specs.snr, snr, atol=1e-6)
+            and np.array_equal(specs.snr, snr)  # exact: both are the same float64 draw
             and np.array_equal(specs.split, split)
         )
         print(f"  {'PASS' if specs_match else 'FAIL'}  metadata matches a fresh draw from seed "
