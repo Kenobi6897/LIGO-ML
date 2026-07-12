@@ -53,10 +53,9 @@ MIN_CLASS = 150
 TARGET_PER_CLASS = 400  # enough for per-class FA statistics with room to train
 DROP_CLASSES = ("No_Glitch", "None_of_the_Above", "Chirp")
 DEDUP_S = 2.0  # triggers closer than this are one physical event; keep max confidence
-MAX_FILES = 200         # download budget: unique 4096 s GWOSC files (~1.2 min each) —
+MAX_FILES = 130         # download budget: unique 4096 s GWOSC files (~1.2 min each) —
                         # THE binding constraint; download time is what we are rationing
-MAX_SPAN_HOURS = 40.0   # safety cap on stored strain (~2.7 GB); storms are span-heavy
-                        # but disk and conditioning are cheap next to network
+MAX_SPAN_HOURS = 80.0   # cap on stored strain (~5 GB; 926 GB free — network binds first)
 
 LEAD = 532.0  # s of segment required before a glitch: PAD + one PSD block + margin
 TAIL = 16.0   # s required after it
@@ -96,27 +95,45 @@ def main() -> int:
     df = df[df.ml_label.isin(counts[counts >= MIN_CLASS].index)]
     print(f"{len(df):,} after confidence/class filters ({df.ml_label.nunique()} classes)")
 
-    # DEDUPLICATE: the CSV lists the same physical trigger many times (near-identical
-    # peak_times) — the first build discovered this as 1,777 offset collisions out of
-    # 2,991 "selected glitches". Cluster within DEDUP_S, keep the highest confidence,
-    # class-agnostic: one time, one specimen.
+    # DEDUPLICATE, in two stages. (1) True duplicates: the CSV lists the same physical
+    # trigger many times at near-identical peak_times — the first build discovered this
+    # as 1,777 offset collisions out of 2,991 "selected glitches". Collapse within
+    # 0.25 s, keeping the highest confidence. (2) Independent-specimen spacing: a
+    # chained cluster-collapse turned whole storms into one specimen, so instead keep
+    # every trigger at least DEDUP_S from the previously kept one — a 100 s storm of
+    # arches contributes ~50 distinct specimens, not 1.
     df = df.sort_values("gps").reset_index(drop=True)
-    cluster_id = np.concatenate([[0], np.cumsum(np.diff(df.gps.values) > DEDUP_S)])
-    df["cluster"] = cluster_id
-    df = df.loc[df.groupby("cluster").ml_confidence.idxmax()].drop(columns="cluster")
-    df = df.reset_index(drop=True)
-    print(f"{len(df):,} after deduplication (clusters within {DEDUP_S}s collapsed)")
+    cl = np.concatenate([[0], np.cumsum(np.diff(df.gps.values) > 0.25)])
+    df = df.loc[df.assign(cluster=cl).groupby("cluster").ml_confidence.idxmax()]
+    df = df.sort_values("gps").reset_index(drop=True)
+    keep_idx = []
+    last = -np.inf
+    for i, g in enumerate(df.gps.values):
+        if g - last >= DEDUP_S:
+            keep_idx.append(i)
+            last = g
+    df = df.iloc[keep_idx].reset_index(drop=True)
+    print(f"{len(df):,} after deduplication (0.25s dupes collapsed, {DEDUP_S}s spacing)")
 
     # --- GWOSC metadata: science segments + event veto (independent of Stage 2's) -----
-    from gwosc.datasets import event_gps, find_datasets
-    from gwosc.timeline import get_segments
+    # Cached locally after the first run: these are static facts about O3a, and the
+    # GWOSC API rate-limits after enough of the per-event queries this needs. The CHECK
+    # script deliberately keeps querying live — it must not share this cache.
+    meta = Path.home() / "ligo-data" / "gwosc_o3a_meta.npz"
+    if meta.exists():
+        z = np.load(meta, allow_pickle=True)
+        segs, events = z["segs"], dict(zip(z["names"], z["gps"]))
+    else:
+        from gwosc.datasets import event_gps, find_datasets
+        from gwosc.timeline import get_segments
 
-    segs = np.array(get_segments("H1_DATA", *O3A), dtype=float)
-    events = {}
-    for n in find_datasets(type="events", segment=O3A):
-        base = n.split("-")[0]
-        if base not in events:
-            events[base] = float(event_gps(n))
+        segs = np.array(get_segments("H1_DATA", *O3A), dtype=float)
+        events = {}
+        for n in find_datasets(type="events", segment=O3A):
+            base = n.split("-")[0]
+            if base not in events:
+                events[base] = float(event_gps(n))
+        np.savez(meta, segs=segs, names=list(events), gps=list(events.values()))
     ev = np.array(sorted(events.values()))
     print(f"{len(segs)} science segments, {len(ev)} events vetoed")
 

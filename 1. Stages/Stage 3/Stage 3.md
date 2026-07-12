@@ -3,7 +3,7 @@ tags: [ligo, machine-learning, stage-3, plan]
 status: in-progress
 created: 2026-07-12
 updated: 2026-07-12
-progress: "2026-07-12 — Step 1 DONE (2,991 glitches / 13 classes selected, all checks green after two selection bugs caught pre-download). Step 2's 56 h fetch running detached (392 blocks). Steps 3-5 code written, imports verified."
+progress: "2026-07-12 — Step 1 DONE after a major revision: the Gravity Spy CSV lists one glitch many times; dedup (0.25s collapse + 2s spacing) makes it 1,851 DISTINCT specimens over 99.6 h. First fetch+build exposed it (780 usable rows + a class with 0 train / 84 test — splits now class-stratified at block level). Final 697-block fetch running; Steps 3-5 code ready."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -46,7 +46,7 @@ files that cover the most not-yet-capped glitches and fetch only those.
 | **The anti-shortcut rule** | **Every Stage 3 block contributes BOTH classes**: glitch-centred crops as negatives, PLUS injections into clean crops of the *same block* as positives (plain-noise crops fill to ~50/50) | Glitch-only additions would let the model learn "this stretch's texture → negative" — the pos/neg-from-different-stretches leak wearing new clothes. Both classes from every block, identically conditioned, kills it. |
 | **Glitch placement** | Glitch `peak_time` at **U[0.10, 0.95) of the crop** — deliberately OVERLAPPING the injection range U[0.70, 0.95) | If glitches only ever appeared where mergers never do, position would become the label. |
 | **Injections** | Identical to Stages 1–2: `IMRPhenomD`, U[10,50] M☉, SNR U[4,20] vs the block's measured PSD | Still one variable per stage: the new thing is labelled glitches, nothing else. |
-| **Splits** | Time-ordered 80/10/10 at block level, independently of Stage 2 (Stage 2's splits are frozen); training mixes Stage2-train + Stage3-train | Same honesty as Stage 2: val/test strictly later than train, within the Stage 3 data. |
+| **Splits** | ~~Time-ordered~~ → **CLASS-STRATIFIED 60/10/30 at block level** (revised 2026-07-12; Stage 2's splits stay frozen and time-ordered); training mixes Stage2-train + Stage3-train | The original time-ordered plan met reality: glitch classes cluster in time (storms), and the first build gave Scattered_Light **0 train / 84 test** and Whistle 139/0/1. A per-class census needs stratification. What time-ordering protected is preserved where it matters — block-level sample disjointness holds, and Stage 2's time-ordered split remains the deployment-honesty guard. Test-heavy (30%) because the money table lives on per-class test statistics. |
 | **Architecture** | **Unchanged `Stage1CNN`**, trained from scratch on the mix | The question is what the *data* buys, not the architecture. |
 | **2D Q-transform arm** | **Deferred** to a Stage 3b if wanted — the brainstorm's 2D comparison is real but the 1D benchmark must exist first | Scope control; [[1D vs 2D - decision explained]] stands. |
 
@@ -63,13 +63,28 @@ files that cover the most not-yet-capped glitches and fetch only those.
 ## 2. The build
 
 ### ✅ Step 1 — Select glitches + plan the download — `stage3_select.py` + check
-**DONE — 2,991 glitches, 13 classes, 96 disjoint spans, 56.2 h / ~100 GWOSC files. All 8
-checks PASS.** Six classes at ~360–400 specimens (Koi_Fish, Scattered_Light,
-Extremely_Loud, Blip, Whistle, Low_Frequency_Burst), seven more at ~80–115.
+**DONE (revised) — 1,851 DISTINCT glitches, 13 classes, 114 disjoint spans, 99.6 h /
+~161 GWOSC files. All 8 checks PASS.** Storms capped near 400 (Scattered_Light,
+Low_Frequency_Burst), chirp-like classes at 134–184 (Blip / Koi_Fish / Extremely_Loud),
+long tail at ~30–50.
 - [x] Filter (conf ≥ 0.9, class rules, event veto at ±(128+512) s, segment geometry)
+- [x] **Deduplicate** — see the bug box below; "400 per class" must mean 400 *events*
 - [x] **Per-class round-robin greedy** under a file budget; spans on a **per-segment block
       grid**; write the selection table
 - [x] **Check:** every constraint re-verified from the CSV and GWOSC independently
+      (the selector caches GWOSC metadata locally after rate-limiting struck; the check
+      deliberately keeps querying live)
+
+> [!warning] 🐛 The Gravity Spy CSV lists one glitch many times
+> The first dataset build silently lost **74% of its glitch rows** (2,991 → 780). The
+> diagnosis: 1,777 "offset collisions" — glitches wanting the same crop. They wanted the
+> same crop because they were **the same glitch**: the CSV carries ~many rows per physical
+> trigger at near-identical peak_times, and per-file top-confidence selection loaded up on
+> repeats. Fix, two stages: collapse true duplicates (±0.25 s, keep max confidence), then
+> enforce ≥ 2 s spacing between kept specimens — chosen over a chain-cluster collapse,
+> which had quietly turned a 100 s storm of distinct arches into one specimen. The
+> post-dedup census also revealed distinct chirp-like glitches are *sparse* (~3/file), so
+> the budgets grew to buy them: 80 span-hours, 130 files.
 
 > [!warning] 🐛 Two selection bugs the check (and its own output) caught before any download
 > **1. Greedy by raw coverage chased storms.** The first objective — take the file covering
@@ -96,7 +111,7 @@ Extremely_Loud, Blip, Whistle, Low_Frequency_Burst), seven more at ~80–115.
 - [ ] **Check:** structure; bit-exact rebuild; SNR calibration (ρ statistic, same-block
       backgrounds); **glitch-presence check** — a glitch-centred crop must actually contain
       excess power (std above the block's clean-crop distribution) at the recorded position
-- [ ] Time-ordered splits verified
+- [ ] Splits verified: block-disjoint, every class measurable on test
 
 ### Step 4 — Train on the mix — `stage3_train.py`
 - [ ] Stage2-train ∪ Stage3-train, same recipe, model selection on the combined val
