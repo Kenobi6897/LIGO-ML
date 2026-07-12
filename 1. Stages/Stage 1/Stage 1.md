@@ -3,7 +3,7 @@ tags: [ligo, machine-learning, stage-1, plan]
 status: in-progress
 created: 2026-07-11
 updated: 2026-07-12
-progress: "Steps 1-3 done and checked. Step 4 (dataset) in progress: writer + lazy Dataset + check written, writer runs, but 2 of the check's 4 properties are RED — bit-exact rebuild, and SNR calibration. Not yet generated the real 100k."
+progress: "Steps 1-3 done and checked. Step 4 (dataset) in progress: writer + lazy Dataset + check written, writer runs. SNR calibration is now GREEN (empirical background, 1.001x median — and it caught a missing SNR rescale in the check itself). One RED left: bit-exact rebuild. Not yet generated the real 100k."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -198,7 +198,8 @@ Per segment: generate a **4 s** noise buffer → (if positive) inject a waveform
 - [x] **Lazy load in `Dataset.__getitem__`.** Handle opened per-process on first read, never in `__init__` — an open h5py handle can't be pickled to a `DataLoader` worker, and one inherited across a fork is unsafe to read concurrently.
 - [x] Also store **per-segment SNR** and masses — plus `merger_pos`, the noise `seed`, and `split`. You need SNR at eval time and cannot recover it later.
 - [x] Parallelise generation with `multiprocessing` — 16 threads on the 3700X.
-- [ ] ⚠️ **Get the check green.** Two open failures.
+- [x] **SNR calibration green** — the x-axis of the money plot is verified. See below.
+- [ ] ⚠️ **Get the check green.** One open failure: the bit-exact rebuild.
 - [ ] Run the real 100k.
 
 **Throughput:** 19 seg/s on the smoke run → **100k is ~90 min**, not the few minutes the plan assumed. Worth a look before committing to it; ~20 s of that is per-worker warm-up (each worker recomputes `_norm()` and its PSDs).
@@ -210,18 +211,36 @@ Both follow from the crop, and both would have been **silent** errors:
 	- The early inspiral **is** still injected into the buffer outside the crop, deliberately. A real 1 s segment cut from a detector stream has the earlier inspiral present on either side of it, and the 0.5 s whitening filter reaches into it. We discard those samples; we don't pretend they were never there.
 2. **SNR is integrated over 30–350 Hz** — the band the CNN actually sees. `condition()` band-passes, so power outside the band is filtered away before the network is handed the segment. Step 2's check integrated from 30 Hz with **no upper cutoff**, which counts ringdown power above 350 Hz that never reaches the model — overstating the SNR of exactly the *lightest* systems, whose merger frequency is highest. The money plot's x-axis has to mean "the SNR available in the data the model is given", so `sigma` now takes `high_frequency_cutoff=350`.
 
-#### 🔴 The check is failing — two open items
-Structure passes clean (shapes, dtypes, 50/50, finite, negatives carry no waveform metadata, merger randomised, **noise seeds unique and no realisation shared across splits**, 80/10/10). The two that matter are red:
+#### ✅ (b) SNR calibration — **FIXED, and it was hiding a real bug**
+Structure passes clean (shapes, dtypes, 50/50, finite, negatives carry no waveform metadata, merger randomised, **noise seeds unique and no realisation shared across splits**, 80/10/10).
 
-**(a) Rebuild is not bit-exact.** Rebuilding a stored row from its metadata alone (seed, masses, SNR, merger position) reproduces it to `max|Δ| = 1.3×10⁻⁵`, not `0`. On a segment whose std is 1.0 that's a **relative 10⁻⁵ — far too big for float32 round-off** (~10⁻⁷). Suspicion is FFTW planning differing between a Pool worker and the main process, but **that is a guess and it has not been demonstrated.** Do not relax the tolerance to make this pass until the cause is known — a writer that shuffled rows, or a parameter that never made it into the segment, would look exactly like this.
+The check asserted `‖C(h)‖₂ ≈ requested SNR` and got a median **4360×** with a **6× spread**. Two separate things were wrong, and the spread was the tell that told us so — a pure scale error would have been a *constant* ratio.
 
-**(b) The SNR calibration check is measuring the wrong thing.** It asserted `‖C(h)‖₂ ≈ requested SNR`, and got a median **4360×** with a **6× spread** across segments. The spread is the tell: a pure scale error would be a *constant* ratio, so this is mass-dependent and the identity itself is wrong.
-	- **Why it's wrong:** `‖C(h)‖₂ = SNR` only holds for **white, unit-variance** noise. Conditioned noise here is unit-variance but **band-limited** (30–350 Hz of a 0–1024 Hz band), so its samples are correlated and the identity doesn't apply.
-	- **The fix (not yet written):** normalise against the **empirical background**. Correlate the conditioned template `C(h)` against a few hundred conditioned *negatives from the file itself* to get σ_bg, then the optimal SNR is `‖C(h)‖² / σ_bg`. Self-normalising, assumption-free, and it measures the SNR the way a detection statistic actually would. Expect it to come back ≈ requested, possibly biased high at low SNR — which would be [[#✅ Step 2 — Waveform generator + SNR scaling — `stage1_injection_check.py`|the same physics Step 2 saw]], not a bug.
-	- Conditioning the **pure waveform** to get `C(h)` is legal, and only because [[#✅ Step 3 — Condition (whiten → bandpass → crop) — `stage1_condition.py`|`condition()` is signal-blind]]. Hand a noiseless signal to `condition_leaky()` and it isn't even well-defined.
+**1. The check never applied the SNR rescale.** `signal_only()` conditioned the **raw** `IMRPhenomD` waveform, at pycbc's default distance. But `build_segment` stores `noise + placed × (snr/σ)`, and `condition()` is linear, so the signal term of a stored row is `C(placed × snr/σ)`, **not** `C(placed)`. The check was measuring a signal that is not in the file — one whose optimal SNR is in the *thousands*. That is the 4360×, and because σ depends on the masses, that is also the 6× spread. **A bug in the check, not in the writer** — but a check that measures the wrong signal is worth exactly nothing, and it had been reported as a *dataset* failure.
 
-> [!warning] Neither failure is cosmetic
-> **(b) makes the x-axis of the money plot unverified.** Until it's green we do not know that a segment labelled "SNR 8" contains an SNR-8 signal — and that axis is the entire result of Stage 1.
+**2. `‖C(h)‖₂ = SNR` was the wrong identity anyway.** It needs the conditioned noise to be **white and unit-variance in the same basis**. Ours is neither: `condition()` band-passes (samples are correlated) and applies a global scale (`_norm()`), which `‖C(h)‖` inherits and the true SNR does not. Left alone, this would have been a quiet **1.79× = 1/√(320/1024)** bias — the reciprocal root of the band fraction. Small, plausible, and fatal to the x-axis.
+
+**The fix — normalise against the empirical background.** Correlate the conditioned template against a few hundred conditioned *negatives from the file itself* to measure σ_bg, then
+
+$$\rho \;=\; \frac{\lVert C(h)\rVert^2}{\sigma_{bg}}, \qquad \sigma_{bg} \;=\; \operatorname{std}\big(\,C(h)\cdot C(n)\,\big)\ \text{over negatives}$$
+
+Numerator and denominator carry the same arbitrary scale and see the same band, so **both cancel**. It assumes nothing about the noise that we did not measure — and it is how a detection statistic would actually be normalised.
+
+**Result: PASS. Median 1.001×** (5th–95th 0.952–1.051, sd 0.029) on a 2k smoke dataset.
+
+**And it buys a second check for free.** The same background, correlated against the **stored row** instead of the pure template, gives `(C(h)·x)/σ_bg = ρ + N(0,1)`. Getting **unit variance** back (measured: **+0.05 ± 1.06**) is what proves σ_bg is the right normalisation — and because a misaligned or absent waveform would drive the recovered value to ~0, it *also* proves the row on disk contains the signal its metadata claims, at the sample offset we think. Two of Step 4's silent failure modes, closed by one statistic.
+
+> [!note] Check 4's prediction had the same crack in it
+> It predicted a positive's variance as `1 + ρ²/N` — which is the same white-noise assumption wearing a different hat. It now uses the **measured** `‖C(h)‖²` from the statistic above (`1 + ‖C(h)‖²/N`), so the leak test no longer rests on an assumption the pipeline doesn't satisfy. Measured/predicted = **0.977×**.
+
+![[4_dataset_check.png]]
+*Top-right is the one that matters. Blue = the signal in the CNN's input, on the ideal line. Orange = the same signal measured off the stored row, scattering about it by exactly 1. (From the 2k smoke dataset — regenerate this from the real 100k.)*
+
+#### 🔴 (a) Rebuild is not bit-exact — still open
+Rebuilding a stored row from its metadata alone (seed, masses, SNR, merger position) reproduces it to `max|Δ| = 6.1×10⁻⁶`, not `0`. On a segment whose std is 1.0 that's a **relative 10⁻⁶–10⁻⁵ — too big for float32 round-off** (~10⁻⁷). Suspicion is FFTW planning differing between a Pool worker and the main process, but **that is a guess and it has not been demonstrated.** Do not relax the tolerance to make this pass until the cause is known — a writer that shuffled rows, or a parameter that never made it into the segment, would look exactly like this.
+
+> [!warning] This failure is not cosmetic
+> It is the check that says *the file is what the code claims it is*. Until it's green, nothing rules out a writer whose rows and labels have come apart.
 
 ### Step 5 — The 1D CNN
 Modest architecture — this is the Gabbard-class problem, not ImageNet:
@@ -274,7 +293,7 @@ A correct Stage 1 model should be **roughly comparable to matched filtering — 
 
 ## 🐛 Bugs the checks caught
 
-Both of these were found by Step 2's check. **Neither one crashed.** Both produced confident, plausible-looking numbers — which is the entire argument for writing a check that compares against something you independently know.
+**None of these crashed.** All produced confident, plausible-looking numbers — which is the entire argument for writing a check that compares against something you independently know.
 
 ### 1. `resize()` threw the merger away
 At 10–50 M☉ from 30 Hz, an `IMRPhenomD` waveform is **longer than the 1 s window** — often several seconds. The obvious `hp.resize(n)` keeps the **first** *n* samples: the quiet early inspiral. It silently discards the merger — the loudest part, and the only part the window actually sees.
@@ -288,8 +307,13 @@ So `sigma()` was normalising against a waveform that wasn't in/ the data. Recove
 
 It returned a flat **~3.6 for every target SNR**: the pure-noise background, reported with total confidence. Not an error, not a NaN — just a wrong number that looked like a number.
 
+### 3. The check measured a signal that wasn't in the file
+Step 4's SNR check conditioned the **unscaled** waveform — it dropped the `snr/σ` factor that `build_segment` applies. It was therefore measuring the SNR of a signal ~1000× louder than the one on disk, and reporting it as a *dataset* failure. **The check was broken, and the dataset was fine.**
+
+Two things saved it. The number was **absurd** (4360×) rather than merely wrong — a subtler slip in the same place would have been believed. And it had a **6× spread** when a pure scale error must be a *constant* ratio: the spread was the fingerprint of `σ(m1, m2)`, and it is what said "you are dividing by something mass-dependent" out loud.
+
 > [!warning] This is the project's stated failure mode wearing different clothes
-> Neither bug was a leak, but both were the *same shape* of problem: code that runs clean and lies. The only reason either was caught is that the check compared against a value known independently. **Write the check that can fail.**
+> None of these was a leak, but all three were the *same shape* of problem: code that runs clean and lies. The only reason any was caught is that the check compared against a value known independently. **Write the check that can fail** — and then, when it does, **read the shape of the failure before you believe your first theory about it.** The first theory here (band-limited noise breaks the identity) was *true*, and was not the bug.
 
 ---
 

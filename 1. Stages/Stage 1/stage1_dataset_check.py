@@ -302,8 +302,8 @@ def main() -> int:
         b.plot(lim, lim, "k--", lw=1, label="ideal")
         b.set_xlabel("requested injected SNR (stored in `snr`)")
         b.set_ylabel("SNR against the file's own background")
-        b.set_title("The money plot's x-axis is calibrated\n"
-                    f"optimal / requested = {med:.3f}× median; the scatter is the noise, at unit variance")
+        b.set_title(f"The money plot's x-axis is calibrated\noptimal / requested = {med:.3f}× median "
+                    f"— and the scatter about it is unit-variance noise")
         b.legend(fontsize=8)
         b.grid(alpha=0.3)
 
@@ -320,7 +320,7 @@ def main() -> int:
         d.hist(snr[pos], bins=40, color="tab:blue", alpha=0.75)
         d.set_xlabel("injected SNR")
         d.set_ylabel("segments")
-        d.set_title(f"Training SNR distribution — U{tuple(np.round([attrs['snr_low'], attrs['snr_high']],0))}\n"
+        d.set_title(f"Training SNR distribution — U({attrs['snr_low']:.0f}, {attrs['snr_high']:.0f})\n"
                     f"{int(pos.sum()):,} positives / {int(neg.sum()):,} negatives, "
                     f"splits {counts[0]:,}/{counts[1]:,}/{counts[2]:,}")
         d.grid(alpha=0.3)
