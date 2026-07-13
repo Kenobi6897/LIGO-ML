@@ -1,8 +1,8 @@
 ---
 tags: [project, ligo, machine-learning, brainstorm]
-status: in-progress
+status: done
 created: 2026-07-11
-updated: 2026-07-12
+updated: 2026-07-13
 ---
 
 # LIGO Gravitational Wave Signal Classifier
@@ -165,13 +165,13 @@ FAR in GW is conventionally quoted in **events per year**, and claiming ~1/year 
 ### ✅ Decided
 - **1D time series, not 2D spectrograms.** Full rationale: **[[1D vs 2D - decision explained]]**.
   Short version: a 2D magnitude image **throws away phase**, which is exactly what matched filtering wins with — so a 2D-vs-MF benchmark is **confounded** and teaches us nothing. 1D keeps the comparison fair. Bonus: **a 1D conv kernel *is* a matched filter**, so the first layer becomes a **learned template bank** we can plot.
-- **2D is not discarded** — it becomes a **Stage 3 comparison arm** (glitch rejection is inherently a 2D *shape* problem). The [[Stage 0]] Q-transform code already exists, so this costs almost nothing.
+- **2D is not discarded** — it becomes a **Stage 3 comparison arm** (glitch rejection is inherently a 2D *shape* problem). The [[Stage 0]] Q-transform code already exists, so this costs almost nothing. *(Outcome: [[Stage 3]] deferred the 2D arm to a possible Stage 3b — scope control; the 1D benchmark had to exist first.)*
 
-### Still open
-- Segment length / sample rate (e.g. 1 s @ 4096 Hz vs. downsampled to 2048).
-- Single detector (H1) or **H1 + L1 as 2-channel input**? Inter-detector coincidence is a big part of real detection — and [[Stage 0]]'s overlay plot is the evidence for it.
-- Injection SNR range — how weak do we go? The interesting regime is where MF *starts to struggle*.
-- Class balance and decision threshold.
+### Still open — all since decided (recorded here 2026-07-13)
+- Segment length / sample rate → **1 s @ 2048 Hz** ([[Stage 1]]; halves the dataset, Nyquist 1024 is ample for a 30–350 Hz band).
+- Single detector (H1) or **H1 + L1 as 2-channel input**? → **H1 only, all stages** — one variable per stage won. The 2-channel input remains the obvious follow-on; [[Stage 0]]'s overlay is still the argument for it.
+- Injection SNR range → **U[4, 20]**, evaluated per-SNR-bin ([[Stage 1]]).
+- Class balance and decision threshold → **50/50**, thresholds set at FAP 1e-1/1e-2/1e-3 quantiles of each arm's own val negatives ([[Stage 1]] Step 6, protocol held through Stage 4).
 
 ## Explicitly out of scope (for now)
 - **2D as the *primary* architecture.** Not out of scope entirely — see [[1D vs 2D - decision explained]]; it returns as a Stage 3 comparison arm. But the "YOLO-style object detection" framing in the original brief refers to work on **spectrograms**, not 1D strain — **don't let it pull the 1D CNN design around.**
