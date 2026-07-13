@@ -1,0 +1,21 @@
+# Stage 4 — WSL2 (Ubuntu 26.04), CPython 3.13. Nothing new: Stage 3's environment
+# already holds everything the matched filter needs (pycbc waveforms, numpy FFTs).
+# This stage is CPU work — the GPU only reprises the CNN forward passes in the eval.
+#
+# The Python version is STILL load-bearing (pycbc has no cp314 wheel) — see Stage 1.
+
+lalsuite
+pycbc
+
+gwpy
+gwosc
+torch
+
+numpy
+scipy
+matplotlib
+h5py
+pandas         # stage3 modules import it at module level
+
+scikit-learn
+tqdm
