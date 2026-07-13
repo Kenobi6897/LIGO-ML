@@ -1,9 +1,9 @@
 ---
 tags: [ligo, machine-learning, stage-4, plan]
-status: in-progress
+status: done
 created: 2026-07-13
 updated: 2026-07-13
-progress: "2026-07-13 — plan pinned; building Step 1 (template bank)."
+progress: "COMPLETE — all 4 steps, every check green (10 bank + 11 MF + 3 eval). The verdict: the theorem holds at home (MF/oracle 1.000 at SNR>=8 @1e-2, no CNN beats the oracle, gap +0.000); bare max-SNR MF is BLIND at FAP 1e-3 on real noise (glitch tail owns its threshold) and fires on 58% of glitches; the chi-sq-reweighted MF (the real method) recovers everything and edges the glitch-trained CNN on rejection (0.100 vs 0.166 @1e-2, 0.047 vs 0.050 @1e-3). The CNN's win is speed: 0.5-0.8 ms vs ~11 ms latency, ~3,700x throughput. Two scorer bugs caught by checks: bandlimited-noise miscalibration (1.7x), non-robust per-block calibration (5% plateau)."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -48,37 +48,127 @@ template bank); the GPU only reprises the CNN forward passes
 
 ## 2. The build
 
-### Step 1 — The template bank — `stage4_bank.py` + check
-- [ ] Stochastic bank, MM 0.97, over crop-truncated conditioned templates; write masses,
+### ✅ Step 1 — The template bank — `stage4_bank.py` + check
+**DONE — 62 templates from 3,443 draws, all 10 checks PASS.** Effectualness median FF
+0.9923, min 0.9696, 100% ≥ 0.965; median FF moves < 0.001 under three other blocks'
+filters — the reference choice carries no weight. Crop truncation makes the bank small:
+what survives to a 1 s crop is far less distinguishable than the full waveforms.
+- [x] Stochastic bank, MM 0.97, over crop-truncated conditioned templates; write masses,
       templates, and the acceptance history to `stage4_bank.h5`
-- [ ] **Check:** effectualness — fitting factor of ≥ 250 held-out random draws: median
+- [x] **Check:** effectualness — fitting factor of ≥ 250 held-out random draws: median
       ≥ 0.97, ≥ 95% above 0.965; robustness — FF barely moves under three *other* train
       blocks' whitening filters; determinism — same seed, same bank; every template
       finite, unit-normalized, in-band
 
-### Step 2 — Score everything — `stage4_mf.py` + check
-- [ ] For every row of s2-val, s2-test, s3-test: ρ, χ²ᵣ, ρ̃, best template, peak lag —
+### ✅ Step 2 — Score everything — `stage4_mf.py` + check
+**DONE — all 11 checks PASS** after the two bugs below. Final calibration: noise
+quadrature std 1.017/1.010 on held-out val negatives, oracle recovery 1.003, bank/oracle
+0.997, χ²ᵣ median 1.07 on matched injections vs 47.1 on loud glitches.
+- [x] For every row of s2-val, s2-test, s3-test: ρ, χ²ᵣ, ρ̃, best template, peak lag —
       templates re-conditioned with **each row's own block filter** (cached per block),
       16 workers; oracle ρ for s2-test positives; timing sidecar for the speed table
-- [ ] **Check:** noise calibration — per-template matched-filter outputs on plain val
+- [x] **Check:** noise calibration — per-template matched-filter outputs on plain val
       negatives are ~N(0,1) (std within 10%); oracle calibration — median ρ_oracle /
       injected-SNR within [0.9, 1.1] on s2-test positives at SNR ≥ 8; bank ≥ 0.95 ×
       oracle on the same rows (the bank's MM holding on real injections); χ²ᵣ ≈ 1 for
-      well-matched injections, ≫ 1 for the loud glitch classes (the whole reason F
-      exists); determinism
+      well-matched injections, ≫ 1 for loud glitches (the whole reason F exists;
+      judged at omicron SNR ≥ 20 — χ² discrimination scales with ρ², so quiet glitches
+      are χ²-invisible *by physics*, not by bug); determinism
 
-### Step 3 — The verdict — `stage4_eval.py` 🎯
-- [ ] **Efficiency vs SNR at FAP 1e-2 / 1e-3** on s2-test: C, D, E, F + oracle —
-      the theorem's home turf
-- [ ] **Per-class glitch FA fraction** on s3-test: same four arms — the theorem's
-      graveyard, and the project's actual question
-- [ ] **Speed table**: latency + throughput per arm
-- [ ] Checks that catch bugs (results are reported, not asserted): MF finds loud
-      injections (E efficiency at SNR 18–20 @ 1e-2 ≥ 0.90); oracle ≥ bank on positives;
-      **the tell** below
-- [ ] Overall FA on glitch-rich data, honestly denominated, all arms
+> [!warning] 🐛 The bandlimited-noise trap — one number, three hats
+> First scoring run: noise quadrature std **1.719**, oracle recovery **1.696**, χ²ᵣ on
+> matched injections **2.98 ≈ 1.7²**. One cause: conditioned noise has unit variance but
+> is NOT white — its power sits in the 30–350 Hz band at ~3.2× the white spectral level,
+> exactly where the templates live (√3.2 ≈ 1.8). A flat-metric correlation is not the
+> matched filter on bandlimited noise. Fix: **re-whiten per block, causally** — the
+> conditioned-noise spectrum is estimated from 64 crops of the block's role-0 PSD-source
+> predecessor (never scored, never trained on), all spectra weighted by 1/√S in-band.
+> Relative statistics barely moved (bank/oracle was 0.997 both times) — but every
+> absolute threshold and the χ² normalization were wearing the same wrong constant.
 
-### Step 4 — Notes + commit
+> [!warning] 🐛 A pooled variance is one glitch away from nonsense
+> After re-whitening, arms E/F/O all plateaued at ~0.95 efficiency in EVERY SNR bin —
+> ~5% of even SNR-18 injections "missed". The eval's own tell flagged it (CNN beating
+> the oracle by +0.054: theorem violation ⇒ bug). Diagnosis: the badly-lost rows had
+> ρ_oracle down to 0.05×SNR — **below the max-over-4096-lags noise floor (~4), which is
+> impossible** unless the whole block was deflated. The per-block calibration scalar s0
+> pooled *variances* over its 64 calibration crops; one loud glitch in a PSD-source
+> block (Stage 2 measured crop stds up to 263) inflates a pooled variance ~30× and
+> silently crushes every ρ in that block — one bad block ≈ the uniform 5%. Fix: s0 =
+> **median of per-crop stds** — the same medicine the PSD estimate already takes.
+> The check that "passed" before pooled over all val blocks and diluted it; the eval's
+> theorem-tell is what actually caught it.
+
+### ✅ Step 3 — The verdict — `stage4_eval.py` 🎯
+**DONE — all 3 bug-catching checks PASS** (E finds every loud injection; oracle is a
+ceiling at SNR ≥ 8; the tell reads **+0.000** — no CNN beats the oracle anywhere on the
+bulk). Stage2-test AUC: C 0.9791, D 0.9839, E 0.9767, F 0.9800.
+- [x] **Efficiency vs SNR at FAP 1e-2 / 1e-3** on s2-test: C, D, E, F + oracle
+- [x] **Per-class glitch FA fraction** on s3-test: same four arms
+- [x] **Speed table**: latency + throughput per arm
+- [x] Checks that catch bugs; results reported, not asserted
+- [x] Overall FA on glitch-rich data, honestly denominated, all arms
+
+**Front 1 — the theorem's home turf (efficiency, s2-test).** At FAP 1e-2 the matched
+filter is optimal like it's supposed to be: E and the oracle hit **1.000** in every bin
+at SNR ≥ 8 (CNNs 0.986–1.000, always ≤ oracle); at 6–8 MF wins outright (0.931 vs
+0.887/0.890). At the ragged 4–6 edge the CNN noses ahead (C 0.465 vs O 0.376) — the
+bank's 62 trials and the CNN's freedom both out-fire a single template there; that is
+trials-factor physics at the noise floor, not a theorem crack.
+
+**Front 1b — and then FAP 1e-3 happens.** Arm E is **functionally blind** (efficiency
+0.000–0.006 everywhere): on real noise its 1e-3 threshold is set by the unlabelled-
+glitch tail of the val negatives — Stage 2's discovery, now measured for matched
+filtering. The χ² veto is what gives matched filtering its 1e-3 regime back: arm F sits
+at 0.85–0.999 — and **beats both CNNs at every SNR at 1e-3** (0.850 vs 0.720/0.658 at
+6–8). The theorem's fine print was always "Gaussian noise"; on real data the veto is
+load-bearing.
+
+**Front 2 — the theorem's graveyard (glitches, s3-test).** ALL-GLITCH false-alarm
+fraction:
+
+| arm | @1e-2 | @1e-3 |
+|---|---|---|
+| E — MF max-ρ | 0.582 | 0.116 |
+| C — CNN glitch-naive | 0.331 | 0.159 |
+| D — CNN glitch-trained | 0.166 | 0.050 |
+| **F — MF newSNR** | **0.100** | **0.047** |
+
+Bare max-SNR MF is exactly the strawman the plan warned about — it fires on 100% of
+Koi_Fish and Tomte at 1e-2. The honest fight is D vs F: **F edges D overall** (0.100 vs
+0.166 @1e-2; 0.047 vs 0.050 @1e-3 — a dead heat), with real complementarity per class:
+the χ² annihilates Koi_Fish (0.000 @1e-3 vs D's 0.102) because loud-and-mismatched is
+its home case, while D handles Extremely_Loud better (0.109 vs 0.145 @1e-3) and they
+tie on Whistle (0.095 each). The glitch-trained CNN learned, from 1,020 labelled
+specimens, roughly what the χ² veto encodes analytically — arm D beats arm E everywhere
+— but it did not surpass the engineered statistic.
+
+**Front 3 — speed.** MF: 8.2 ms/crop (62 templates, warm bank, 1 core) + 2.7 ms/crop
+amortized re-conditioning; 42 crops/s through the full 16-thread pipeline (oracle
+included). CNN: **0.47 ms/crop on a single CPU core** (the 251k-param model is so small
+the GPU only pays off in batch: 0.81 ms batch-1, **158,000 crops/s at batch 256**).
+Latency ~20×, throughput ~3,700× — and the CNN needs no template bank, no χ² binning,
+no per-block re-conditioning at inference.
+
+### ✅ Step 4 — Notes + commit
+
+## The verdict, in terms of the two assumptions
+
+1. **Gaussianity.** Where the noise is quasi-Gaussian (bulk, FAP 1e-2), the theorem
+   held to the decimal: nothing beat the oracle, anywhere (the tell read +0.000). Where
+   the noise's non-Gaussian tail rules (FAP 1e-3, glitch-rich data), *naked* matched
+   filtering collapsed — blind on injections, 58% glitch false-alarm — and was rescued
+   only by an engineered statistic (χ²) that is itself a response to the assumption
+   failing. The CNN learned an equivalent rescue from data alone (D ≈ F on glitch
+   rejection at 1e-3), which is the project's thesis demonstrated: the gap MF's theorem
+   leaves on real noise is learnable structure.
+2. **Template coverage.** Untested here by design — every injection was drawn from the
+   same family the bank covers (FF ≥ 0.97). The CNN's generalization edge, if any,
+   lives outside this benchmark (a follow-on: score waveforms *off* the bank manifold).
+3. **The practical margin is speed**, and it is enormous (20× latency, 3,700×
+   throughput on respectable hardware both sides) — which is exactly why the field
+   cares about learned detectors for low-latency alerts, with the matched filter
+   remaining the offline gold standard.
 
 ## 3. Footguns
 
@@ -113,12 +203,13 @@ low-SNR edge where "Gaussian" is least true.
 
 ## Done when
 
-- [ ] Efficiency-vs-SNR at equal FAP: all four arms + oracle, tabled and plotted
-- [ ] Per-class glitch FA: all four arms beside each other — the project's money table,
-      final form
-- [ ] Speed: latency and throughput, both sides on respectable hardware
-- [ ] The verdict written down: where MF wins, where the CNN wins, and *why* — in terms
-      of the two assumptions (Gaussianity, template coverage) the project set out to
-      crack
+- [x] Efficiency-vs-SNR at equal FAP: all four arms + oracle, tabled and plotted
+      (`outputs/3_eval.png`)
+- [x] Per-class glitch FA: all four arms beside each other — the project's money table,
+      final form (Step 3 above)
+- [x] Speed: latency and throughput, both sides on respectable hardware
+- [x] The verdict written down: where MF wins (the quasi-Gaussian bulk, and — armed
+      with its χ² — even the glitch table, narrowly), where the CNN wins (speed, and
+      learning the veto instead of engineering it), and why
 
 → Then the write-up: the project's claims, each pinned to a measured number.
