@@ -1,9 +1,9 @@
 ---
 tags: [ligo, machine-learning, stage-3, plan]
-status: in-progress
+status: done
 created: 2026-07-12
-updated: 2026-07-12
-progress: "2026-07-12 — Step 1 DONE after a major revision: the Gravity Spy CSV lists one glitch many times; dedup (0.25s collapse + 2s spacing) makes it 1,851 DISTINCT specimens over 99.6 h. First fetch+build exposed it (780 usable rows + a class with 0 train / 84 test — splits now class-stratified at block level). Final 697-block fetch running; Steps 3-5 code ready."
+updated: 2026-07-13
+progress: "COMPLETE — all 6 steps done, every check green (7 fetch + 13 dataset + eval 3/3). The money table: overall glitch FA 0.331->0.166 @1e-2, 0.159->0.050 @1e-3, with detection IMPROVED (stage2-test AUC 0.9791->0.9839). One real bug on the way: 6,000-sigma glitch crops made BCE crush the CNN's gain (logits pinned at +-7, SNR 6-8 efficiency 0.89->0.37) — fixed by saturating crops at +-20 sigma at read time. Still fooling it: Extremely_Loud, Repeating_Blips, Koi_Fish, Scratchy."
 parent: "[[GW Signal Classifier - Brainstorm]]"
 ---
 
@@ -99,34 +99,91 @@ long tail at ~30–50.
 > fetch exactly the blocks glitches need (k and its causal k−1). No rounding, no feedback —
 > and the accounting came back to 56.18 h on its own.
 
-### Step 2 — Fetch the strain — `stage3_fetch.py` + check
-- [ ] Reuse Stage 2's fetch machinery over the merged spans → `stage3_strain.h5`
-- [ ] **Check:** Stage 2's fetch check, pointed at the new file (no NaNs, science-mode,
+### ✅ Step 2 — Fetch the strain — `stage3_fetch.py` + check
+**DONE 2026-07-13 — 5.5 GB, all 7 checks PASS.** The overnight fetch survived; all
+1,851 glitches landed in role-1 blocks with contiguous causal predecessors.
+- [x] Reuse Stage 2's fetch machinery over the merged spans → `stage3_strain.h5`
+- [x] **Check:** Stage 2's fetch check, pointed at the new file (no NaNs, science-mode,
       event-vetoed, disjoint, PSD-block-led stretches) — plus: every selected glitch's
       buffer AND its causal PSD block actually exist in the file
 
-### Step 3 — Write the dataset — `stage3_dataset.py` + `stage3_data.py` + check
-- [ ] Rows per block: glitch-centred negatives + clean-crop injections + plain-noise
+### ✅ Step 3 — Write the dataset — `stage3_dataset.py` + `stage3_data.py` + check
+**DONE 2026-07-13 — 7,312 rows exactly 50/50 (1,828 glitch + 1,828 plain negatives,
+3,656 injections; 1,828 of 1,851 selected glitches survived placement), splits
+4,080/744/2,488, all 13 checks PASS** (bit-exact rebuild, ρ/target = 1.009,
+88% of glitches in the primary position window, 30% overlapping the injection range).
+- [x] Rows per block: glitch-centred negatives + clean-crop injections + plain-noise
       negatives, ~50/50 pos/neg, identical `condition_real()` call for all
-- [ ] **Check:** structure; bit-exact rebuild; SNR calibration (ρ statistic, same-block
+- [x] **Check:** structure; bit-exact rebuild; SNR calibration (ρ statistic, same-block
       backgrounds); **glitch-presence check** — a glitch-centred crop must actually contain
       excess power (std above the block's clean-crop distribution) at the recorded position
-- [ ] Splits verified: block-disjoint, every class measurable on test
+- [x] Splits verified: block-disjoint, every class measurable on test
 
-### Step 4 — Train on the mix — `stage3_train.py`
-- [ ] Stage2-train ∪ Stage3-train, same recipe, model selection on the combined val
-- [ ] Checkpoint → `~/ligo-data/stage3_cnn.pt`
+> [!warning] 🐛 Stratifying by block count starved seven tail classes on test
+> The first build's splitter gave each class ~30% of its *blocks* to test — but blocks
+> are lumpy (a storm block holds hundreds of one class) and a 40-specimen class needs
+> min(20, all-it-has) test ROWS to be measurable, which is ~50% of it, not 30%. It also
+> ignored rows a class inherited from blocks already assigned by rarer classes. Fix:
+> targets are row counts (test first: `max(round(0.3·total), min(20, total))`), counting
+> inherited rows. Measurability outranks the fractions; the fractions were never the
+> point — the money table is.
 
-### Step 5 — The glitch benchmark — `stage3_eval.py` 🎯
-- [ ] Arms: **C** = Stage-2 model (glitch-naive), **D** = Stage-3 model (glitch-trained),
+### ✅ Step 4 — Train on the mix — `stage3_train.py`
+**DONE 2026-07-13 — best val AUC 0.9843 (epoch 2), after the stage's headline bug:**
+- [x] Stage2-train ∪ Stage3-train, same recipe, model selection on the combined val
+- [x] Checkpoint → `~/ligo-data/stage3_cnn.pt`
+
+> [!warning] 🐛🐛 6,000-sigma inputs made BCE strangle the network — the saturation bug
+> First training "worked" (val AUC 0.9329, PASS) and failed the eval twice over: stage2-test
+> AUC 0.9791 → 0.9337, SNR 6-8 efficiency 0.89 → 0.37, AND overall glitch FA *worse*
+> (0.363 vs 0.304 @1e-2). The diagnosis, measured: whitened glitch crops peak at up to
+> **6,094σ** (Extremely_Loud; Stage 2's loudest crop ever: 18σ). A near-linear CNN scales
+> its logit with input amplitude — the glitch-naive arm C emits logit **+361** on a 361σ
+> glitch. Under BCE the only way the optimizer can afford confidently-wrong 6,000σ
+> negatives is to shrink the network's overall gain until *every* logit fits in ±7
+> (measured: arm D's stage2-val |logit| p99 = 6.7 vs C's 31.4) — glitch rejection learned,
+> weak-signal sensitivity destroyed. **Fix: crops saturate at ±20σ in
+> `Stage3Dataset.__getitem__`** — read-time, so the h5 stays raw and the bit-exact rebuild
+> check still holds; identical for training and eval, so both arms see the same inputs; a
+> no-op for every Stage 2 crop and every injection (physical analogue: sensor saturation —
+> a rail at 20σ is still unmistakably a glitch). Retrained: val AUC 0.9843, and the eval
+> flipped to 3/3 PASS.
+
+### ✅ Step 5 — The glitch benchmark — `stage3_eval.py` 🎯
+**DONE 2026-07-13 — all 3 checks PASS.**
+- [x] Arms: **C** = Stage-2 model (glitch-naive), **D** = Stage-3 model (glitch-trained),
       both on: the Stage 2 test split (efficiency must NOT degrade) and the Stage 3 glitch
       test set
-- [ ] **The money table: per-class glitch false-alarm fraction at FAP 1e-2 / 1e-3
+- [x] **The money table: per-class glitch false-alarm fraction at FAP 1e-2 / 1e-3
       thresholds** (set on each arm's own val negatives) — which morphologies fool a
       chirp detector, and which stop fooling it once it has seen them by name
-- [ ] Overall FAR on glitch-rich data, honestly denominated
+- [x] Overall FAR on glitch-rich data, honestly denominated
 
-### Step 6 — Notes + commit
+**The result.** Detection did not just survive glitch training — it improved:
+stage2-test AUC **C 0.9791 → D 0.9839**, efficiency flat-or-better in every SNR bin
+above 6 (the 4-6 bin dips 0.465 → 0.428, and still fails as it must). On the glitch
+test set (622 specimens, 13 classes):
+
+| | C @1e-2 | **D @1e-2** | C @1e-3 | **D @1e-3** |
+|---|---|---|---|---|
+| **ALL GLITCHES** | 0.331 | **0.166** | 0.159 | **0.050** |
+
+Per class, three stories:
+- **Tamed** — Tomte 0.35 → **0.00**, Scattered_Light 0.20 → **0.04**, Fast_Scattering
+  0.20 → **0.05**, Blip_Low_Frequency 0.35 → **0.15**, Blip 0.38 → **0.18** (0.05 @1e-3).
+  Seeing specimens by name works.
+- **Halved but standing** — Extremely_Loud 0.80 → **0.455**, Koi_Fish 0.82 → **0.35**,
+  Scratchy 0.65 → **0.35**, Repeating_Blips 0.70 → **0.45**, Whistle 0.33 → **0.26**.
+  The loud chirp-adjacent morphologies (Koi_Fish is a teardrop chirp cousin;
+  Repeating_Blips *contains* blips; Extremely_Loud saturates everything) remain the
+  detector's blind spot — exactly the classes Stage 4's matched filter will also face.
+- **Never fooled anyone** — Low_Frequency_Burst 0.000 both arms (peaks below band),
+  Low_Frequency_Lines, Air_Compressor ≤ 0.1 throughout.
+
+No 🚩 tell: no class sits at perfect rejection with full efficiency, low SNR still
+fails, and the Stage-2 split stayed frozen.
+
+### ✅ Step 6 — Notes + commit
 
 ## 3. Footguns
 
@@ -155,11 +212,15 @@ more likely means the glitch test set leaked into training than that the problem
 
 ## Done when
 
-- [ ] Per-class glitch FA table exists for both models, at FAP 1e-2 and 1e-3
-- [ ] The Stage-3 model beats the Stage-2 model on glitch rejection **without losing
-      efficiency on the Stage 2 test split**
-- [ ] The classes that still fool the detector are named, with example figures
-- [ ] The why is written down
+- [x] Per-class glitch FA table exists for both models, at FAP 1e-2 and 1e-3
+      (`stage3_eval.py` output + `outputs/6_eval.png`)
+- [x] The Stage-3 model beats the Stage-2 model on glitch rejection **without losing
+      efficiency on the Stage 2 test split** (FA halved @1e-2, cut 3× @1e-3; AUC up)
+- [x] The classes that still fool the detector are named, with example figures —
+      Extremely_Loud, Repeating_Blips, Koi_Fish, Scratchy (gallery in
+      `outputs/3_dataset_check.png`, per-class bars in `outputs/6_eval.png`)
+- [x] The why is written down — the saturation bug box (Step 4) and the three-story
+      per-class breakdown (Step 5)
 
 → Then **[[GW Signal Classifier - Brainstorm|Stage 4]]**: the matched-filter baseline, at
 equal false-alarm rate, on data that now includes labelled glitches — the fight the whole

@@ -1,4 +1,16 @@
-"""Stage 3, Step 3 — reading the dataset. Same lazy-handle contract as Stages 1-2."""
+"""Stage 3, Step 3 — reading the dataset. Same lazy-handle contract as Stages 1-2,
+plus one new rule this stage's data forces: crops SATURATE at +-CLIP_SIGMA.
+
+Whitened glitch crops peak at up to ~6,000 sigma (Extremely_Loud); Stage 2 never
+exceeds 18. Trained on the raw mix, BCE punishes a near-linear CNN so hard for a
+6,000-sigma negative that the optimizer shrinks the network's overall gain until
+every logit fits in +-7 — glitch rejection learned, weak-signal sensitivity gone
+(measured: stage2-test AUC 0.979 -> 0.934, SNR 6-8 efficiency 0.89 -> 0.37). The
+clip is applied at READ time, identically for training and eval, so both arms see
+the same inputs; the h5 stays raw and the bit-exact rebuild check still holds. At
++-20 sigma it is a no-op for every Stage 2 crop and for the injections; a rail at
+20 sigma is still unmistakably a glitch (physical analogue: sensor saturation).
+"""
 
 from __future__ import annotations
 
@@ -12,6 +24,7 @@ from torch.utils.data import Dataset
 from stage3_dataset import DEFAULT_OUT
 
 SPLIT_IDS = {"train": 0, "val": 1, "test": 2}
+CLIP_SIGMA = 20.0
 
 
 class Stage3Dataset(Dataset):
@@ -45,8 +58,9 @@ class Stage3Dataset(Dataset):
         return len(self.rows)
 
     def __getitem__(self, i: int):
-        x = self._file()["X"][int(self.rows[i])]
-        return torch.from_numpy(np.asarray(x, dtype=np.float32)), torch.tensor([self.y[i]])
+        x = np.asarray(self._file()["X"][int(self.rows[i])], dtype=np.float32)
+        np.clip(x, -CLIP_SIGMA, CLIP_SIGMA, out=x)
+        return torch.from_numpy(x), torch.tensor([self.y[i]])
 
     def __getstate__(self):
         return {**self.__dict__, "_f": None}

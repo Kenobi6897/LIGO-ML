@@ -160,24 +160,31 @@ def make_specs(seed: int):
     # population census, not a stream test — Stage 2's time-ordered split remains the
     # deployment guard. Block-level disjointness (no shared raw samples) still holds.
     # Rarest classes assign their blocks first; a block's assignment is final, so
-    # multi-class blocks inherit the rarest class's stratification.
+    # multi-class blocks inherit the rarest class's stratification. Targets are ROW
+    # counts, not block counts — blocks are lumpy (a storm block holds hundreds of one
+    # class) and a tiny class needs min(20, all-it-has) test rows to be measurable,
+    # which for a 40-specimen class is ~50%, not 30%. Measurability outranks the
+    # fractions; unmeasurable is worse than untrainable.
     rng2 = np.random.default_rng(seed + 1)
     g = rec[rec.is_glitch == 1]
     assign: dict[int, int] = {}
     class_counts = {li: int((g.glitch_label == li).sum()) for li in set(g.glitch_label)}
     for li in sorted(class_counts, key=class_counts.get):
-        blks = [int(b) for b in np.unique(g.block[g.glitch_label == li]) if int(b) not in assign]
-        if not blks:
-            continue
+        m = g.glitch_label == li
+        total = int(m.sum())
+        counts = {int(b): int((g.block[m] == b).sum()) for b in np.unique(g.block[m])}
+        have = {0: 0, 1: 0, 2: 0}
+        for b, c in counts.items():  # rows inherited from rarer classes' assignments
+            if b in assign:
+                have[assign[b]] += c
+        blks = [b for b in counts if b not in assign]
         rng2.shuffle(blks)
-        n = len(blks)
-        if n == 1:
-            assign[blks[0]] = 2  # unmeasurable is worse than untrainable
-            continue
-        n_te = max(1, round(SPLITS[2] * n))
-        n_va = round(SPLITS[1] * n)
-        for i, b in enumerate(blks):
-            assign[b] = 2 if i < n_te else (1 if i < n_te + n_va else 0)
+        need_te = max(round(SPLITS[2] * total), min(20, total))
+        need_va = round(SPLITS[1] * total)
+        for b in blks:
+            s = 2 if have[2] < need_te else (1 if have[1] < need_va else 0)
+            assign[b] = s
+            have[s] += counts[b]
     split = np.array([assign[int(b)] for b in rec.block], dtype=np.int8)
     return rec, split, labels, bgps
 
