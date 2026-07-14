@@ -42,3 +42,8 @@ venv/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# --- Explained: personal notes, kept out of the repo ---
+# The physics explainers are working notes for me, not part of the published report.
+# They stay on disk (Obsidian still sees them) but git ignores them entirely.
+2. Explained/
