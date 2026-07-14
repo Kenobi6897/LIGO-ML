@@ -71,12 +71,14 @@ CONTROL_AUC = 0.9839
 CONTROL_GLITCH_FA_1E2 = 0.166
 
 LABELS = {
-    "full": "full — whiten + bandpass (control, arm D)",
+    "full": "full — whiten + bandpass (control: Stage 3's arm D, as published)",
+    "full_clipall": "full_clipall — same, but the +-20 sigma clip on the Stage 2 rows too",
     "wh": "wh — whiten only, no bandpass",
     "bp": "bp — bandpass only, no whitening",
     "raw": "raw — no conditioning at all",
 }
-COLOURS = {"full": "tab:blue", "wh": "tab:green", "bp": "tab:orange", "raw": "tab:red"}
+COLOURS = {"full": "tab:blue", "full_clipall": "tab:purple",
+           "wh": "tab:green", "bp": "tab:orange", "raw": "tab:red"}
 
 
 def score(model, ds, device) -> np.ndarray:
@@ -104,14 +106,18 @@ def load_arms(device, want_noclip: bool):
         model=m.to(device), ck=c,
         s2val=Stage2Dataset("val"), s2test=Stage2Dataset("test"), gtest=Stage3Dataset("test"),
     )
-    for arm in ("wh", "bp", "raw"):
+    for arm in ("full", "wh", "bp", "raw"):
         for clip in ((True, False) if want_noclip else (True,)):
             p = ckpt_path(arm, clip)
             if not p.exists():
-                if clip:
+                if clip and arm != "full":
                     print(f"  (no checkpoint for arm {arm} — run stage5_train.py --arm {arm})")
                 continue
-            key = arm if clip else f"{arm}_noclip"
+            # `full` retrained through THIS harness is not a duplicate of the control: the
+            # control clips only the Stage 3 rows (Stage3Dataset does, Stage2Dataset does
+            # not), while every Stage 5 arm clips BOTH. That one difference turned out to
+            # matter more than the ablation did — see [[Stage 5]] §the clip was half-applied.
+            key = ("full_clipall" if arm == "full" else arm) + ("" if clip else "_noclip")
             m, c = load_checkpoint(p)
             arms[key] = dict(
                 model=m.to(device), ck=c,
@@ -129,8 +135,8 @@ def main() -> int:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     arms = load_arms(device, args.noclip)
-    order = [k for k in ("full", "wh", "bp", "raw", "raw_noclip", "bp_noclip", "wh_noclip")
-             if k in arms]
+    order = [k for k in ("full", "full_clipall", "wh", "bp", "raw",
+                         "raw_noclip", "bp_noclip", "wh_noclip") if k in arms]
 
     print("arms:")
     for k in order:
