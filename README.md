@@ -16,6 +16,73 @@ optimality guarantee evaporates and a learned model has room to earn its keep.
   <em>GW150914, whitened and Q-transformed. The upward sweep from ~35 to 250 Hz, in both detectors. This is what the network was asked to find.</em>
 </p>
 
+## In plain English
+
+*No physics or machine-learning background needed for this section. Everything after it assumes both.*
+
+**What LIGO does.** When two black holes spiral into each other and merge, they shake the shape of
+space itself, and the ripple travels outward at the speed of light. LIGO is a pair of enormous
+L-shaped rulers, in Louisiana and Washington State, built to feel that ripple as it passes: it
+stretches one arm and squeezes the other by a fraction of the width of a proton. The measurement
+that comes out is a single wobbling number, recorded thousands of times a second — a sound wave, in
+effect. Play it and a black-hole merger goes *whoop*: a rising tone that sweeps up in pitch and cuts
+off. Physicists call it a **chirp**. The picture above is one real chirp, from the first detection
+ever made, in 2015.
+
+**The problem.** The chirp is far quieter than the noise it's buried in. The detector is a
+hair-trigger instrument sitting in a noisy world — trucks, weather, the ocean, its own electronics —
+so most of what it records is junk. Finding the chirps in that mess is the whole game.
+
+**How the field does it now.** Because Einstein's equations tell you exactly what shape a merger's
+chirp *should* have, you can compute a catalogue of expected chirps ahead of time — one for each
+combination of black-hole masses — and then slide each one along the recorded data asking "does this
+stretch look like this?" That's **matched filtering**, and there's a theorem saying it is the best
+possible method. Nothing can beat it. But the theorem comes with fine print: it only holds if the
+noise is *well-behaved* — a uniform, featureless hiss.
+
+**The catch.** Real detector noise is not well-behaved. It hisses, mostly, but it also produces
+sudden loud pops and thumps of instrumental origin, called **glitches** — dozens per hour, and some
+of them look enough like a chirp to fool the method that was supposed to be unbeatable. The moment
+the noise misbehaves, the theorem stops protecting you, and the "best possible method" is only best
+in a world that doesn't exist.
+
+**What this project asked.** That gap is where a machine-learning model might have something to
+offer: instead of being handed a catalogue of what signals look like, it is shown a large pile of
+labelled examples — signal, not-signal, glitch — and left to work out the difference for itself. If
+the noise has quirks that nobody wrote an equation for, a model that learns from the actual data has
+a chance of picking them up. So: **on real LIGO noise, glitches and all, judged fairly, can a small
+neural network keep up with matched filtering — and what does each one cost to run?**
+
+**How it was tested.** In four stages, changing exactly one thing at a time: first in fake, textbook
+noise (does the network work at all?), then in 30 hours of real recorded noise (how much does
+reality hurt?), then with 1,851 catalogued real glitches added as trick questions (can it learn to
+ignore them?), and finally head-to-head against a proper matched-filtering system built to the
+standards the field uses. Both sides were tuned to raise the *same number of false alarms* — the
+only honest way to compare two detectors, since anything can look sensitive if you let it cry wolf.
+
+**What came back.** Three answers, and the third is the one that matters.
+
+1. **In the well-behaved noise the theorem is about, the theorem won — exactly.** The network never
+   beat it, anywhere, by any margin. That was the expected outcome, and getting anything else would
+   have meant a bug rather than a discovery.
+2. **On real noise with glitches, plain matched filtering fell apart** — at strict settings it went
+   effectively blind, firing on glitches instead of signals. It survives in practice only because
+   physicists bolted on an extra hand-designed test that catches glitches. In other words: the fix
+   for the theorem's fine print isn't the theorem. It's a patch.
+3. **The network learned its own version of that patch, just from examples** — from about a thousand
+   labelled glitches, no equations — and ended up roughly neck-and-neck with the hand-designed one.
+   It didn't surpass it. But it ran **~20× faster per candidate and ~3,700× faster in bulk**, and it
+   needs no catalogue of expected chirps at all.
+
+**Why anyone should care.** When a real merger happens, telescopes around the world want to swing
+toward it *while the light from the aftermath is still arriving* — a race measured in seconds. That
+is the argument for learned detectors: not that they're smarter than the century of physics behind
+matched filtering, but that they can be nearly as discerning while being thousands of times cheaper
+to run. Matched filtering keeps the crown for the careful, offline analysis. The neural network is
+making a case for the night shift.
+
+---
+
 ## Abstract
 
 A 251k-parameter 1D CNN was trained on synthetic binary-black-hole injections
