@@ -17,10 +17,16 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from stage5_condition import BUILD_ARMS, CLIP_SIGMA
+from stage5_condition import ARMS, BUILD_ARMS, CLIP_SIGMA
 
 DATA = Path.home() / "ligo-data"
 SPLIT_IDS = {"train": 0, "val": 1, "test": 2}
+
+# The control's crops are not in stage5_*.h5 — they are the Stage 2 / Stage 3 datasets
+# themselves, under their own name. Reading `full` through THIS class (rather than through
+# Stage2Dataset/Stage3Dataset) is what lets the seed sweep train the control on exactly the
+# code path the ablated arms use: same reader, same clip, same loader, same everything.
+CONTROL = {"s2": (DATA / "stage2.h5", "X"), "s3": (DATA / "stage3.h5", "X")}
 
 
 class Stage5Dataset(Dataset):
@@ -28,15 +34,18 @@ class Stage5Dataset(Dataset):
 
     def __init__(self, arm: str, source: str = "s2", split: str = "train",
                  clip: bool = True, path: Path | None = None):
-        if arm not in BUILD_ARMS:
-            raise ValueError(f"arm must be one of {BUILD_ARMS}, got {arm!r}")
+        if arm not in ARMS:
+            raise ValueError(f"arm must be one of {ARMS}, got {arm!r}")
         if split not in SPLIT_IDS:
             raise ValueError(f"split must be one of {list(SPLIT_IDS)}, got {split!r}")
         self.arm, self.source, self.split, self.clip = arm, source, split, clip
-        self.path = Path(path) if path else DATA / f"stage5_{source}.h5"
+        if arm == "full":
+            default, self.key = CONTROL[source]
+        else:
+            default, self.key = DATA / f"stage5_{source}.h5", f"X_{arm}"
+        self.path = Path(path) if path else default
         if not self.path.exists():
             raise FileNotFoundError(f"{self.path} — run stage5_dataset.py --source {source}")
-        self.key = f"X_{arm}"
 
         with h5py.File(self.path, "r") as f:
             self.rows = np.flatnonzero(f["split"][:] == SPLIT_IDS[split])

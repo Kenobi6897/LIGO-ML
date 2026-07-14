@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Stage 2"))
 from stage1_model import Stage1CNN
 from stage1_train import run_val
 
-from stage5_condition import BUILD_ARMS
+from stage5_condition import ARMS
 from stage5_data import Stage5Dataset
 
 DATA = Path.home() / "ligo-data"
@@ -49,31 +49,40 @@ SEED = 20260713  # Stage 3's seed, unchanged — same init, same shuffle
 PATIENCE = 6
 
 
-def ckpt_path(arm: str, clip: bool) -> Path:
-    return DATA / f"stage5_cnn_{arm}{'' if clip else '_noclip'}.pt"
+def ckpt_path(arm: str, clip: bool, seed: int = SEED) -> Path:
+    """Seeds other than Stage 3's get their own file, so a sweep can never overwrite the
+    single-seed checkpoint the headline table was measured on."""
+    tag = "" if clip else "_noclip"
+    tag += "" if seed == SEED else f"_s{seed}"
+    return DATA / f"stage5_cnn_{arm}{tag}.pt"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Stage 5 Step 4 — train one ablated arm")
-    ap.add_argument("--arm", choices=BUILD_ARMS, required=True)
+    ap.add_argument("--arm", choices=ARMS, required=True)
     ap.add_argument("--no-clip", action="store_true", help="disable +-20 sigma saturation")
+    ap.add_argument("--seed", type=int, default=SEED, help="for the seed sweep")
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--quiet", action="store_true", help="one line per run, for sweeps")
     args = ap.parse_args()
     clip = not args.no_clip
-    ckpt = ckpt_path(args.arm, clip)
+    ckpt = ckpt_path(args.arm, clip, args.seed)
 
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"device: {torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'}")
-    print(f"arm: {args.arm}  clip: {'+-20 sigma' if clip else 'OFF'}  -> {ckpt}\n")
+    if not args.quiet:
+        print(f"device: {torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'}")
+        print(f"arm: {args.arm}  clip: {'+-20 sigma' if clip else 'OFF'}  "
+              f"seed: {args.seed}  -> {ckpt}\n")
 
     s2tr = Stage5Dataset(args.arm, "s2", "train", clip=clip)
     s3tr = Stage5Dataset(args.arm, "s3", "train", clip=clip)
     s2va = Stage5Dataset(args.arm, "s2", "val", clip=clip)
     s3va = Stage5Dataset(args.arm, "s3", "val", clip=clip)
-    print(f"{s2tr}\n{s3tr}\n{s2va}\n{s3va}\n")
+    if not args.quiet:
+        print(f"{s2tr}\n{s3tr}\n{s2va}\n{s3va}\n")
 
     train_loader = DataLoader(ConcatDataset([s2tr, s3tr]), batch_size=BATCH, shuffle=True,
                               num_workers=args.workers, pin_memory=True,
@@ -109,15 +118,22 @@ def main() -> int:
             best_auc, best_epoch = val_auc, epoch
             ckpt.parent.mkdir(parents=True, exist_ok=True)
             torch.save({"state_dict": model.state_dict(), "epoch": epoch,
-                        "val_auc": val_auc, "seed": SEED, "arm": args.arm, "clip": clip,
+                        "val_auc": val_auc, "seed": args.seed, "arm": args.arm, "clip": clip,
                         "trained_on": f"stage5 arm {args.arm} (stage2+stage3 rows)",
                         "created": time.strftime("%Y-%m-%d %H:%M:%S")}, ckpt)
             star = "  * saved"
-        print(f"epoch {epoch:3d}  train loss {running/nb:.4f}  val loss {val_loss:.4f}  "
-              f"val AUC {val_auc:.4f}  ({time.time()-te:.0f}s){star}")
+        if not args.quiet:
+            print(f"epoch {epoch:3d}  train loss {running/nb:.4f}  val loss {val_loss:.4f}  "
+                  f"val AUC {val_auc:.4f}  ({time.time()-te:.0f}s){star}")
         if epoch - best_epoch >= PATIENCE:
-            print(f"\nearly stop after {PATIENCE} flat epochs")
+            if not args.quiet:
+                print(f"\nearly stop after {PATIENCE} flat epochs")
             break
+
+    if args.quiet:
+        print(f"  arm {args.arm:4s} seed {args.seed}  best val AUC {best_auc:.4f} "
+              f"(epoch {best_epoch}, {(time.time()-t0)/60:.1f} min)")
+        return 0
 
     print(f"\ndone in {(time.time()-t0)/60:.1f} min — best val AUC {best_auc:.4f} "
           f"(epoch {best_epoch}) -> {ckpt}")
