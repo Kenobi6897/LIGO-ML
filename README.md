@@ -12,7 +12,7 @@ regime: **real detector noise isn't Gaussian, and it's full of glitches.** That'
 optimality guarantee evaporates and a learned model has room to earn its keep.
 
 <p align="center">
-  <img src="1.%20Stages/Stage%200/outputs/3_qtransform.png" width="85%" alt="Q-transform of GW150914 in H1 and L1 — the chirp"><br>
+  <img src="Stages/Stage%200/outputs/3_qtransform.png" width="85%" alt="Q-transform of GW150914 in H1 and L1 — the chirp"><br>
   <em>GW150914, whitened and Q-transformed. The upward sweep from ~35 to 250 Hz, in both detectors. This is what the network was asked to find.</em>
 </p>
 
@@ -147,9 +147,9 @@ same architecture, same conditioning contract — only the noise (Stage 2), then
 (Stage 3), then the detector itself (Stage 4) change.
 
 Each stage is written up in full — including dead ends and bugs — in its own note beside its code:
-[Stage 0](1.%20Stages/Stage%200/Stage%200.md) · [Stage 1](1.%20Stages/Stage%201/Stage%201.md) ·
-[Stage 2](1.%20Stages/Stage%202/Stage%202.md) · [Stage 3](1.%20Stages/Stage%203/Stage%203.md) ·
-[Stage 4](1.%20Stages/Stage%204/Stage%204.md).
+[Stage 0](Stages/Stage%200/Stage%200.md) · [Stage 1](Stages/Stage%201/Stage%201.md) ·
+[Stage 2](Stages/Stage%202/Stage%202.md) · [Stage 3](Stages/Stage%203/Stage%203.md) ·
+[Stage 4](Stages/Stage%204/Stage%204.md).
 
 ## 2. Methods
 
@@ -282,7 +282,7 @@ PSD). And the payoff figure: **15 of 16 first-layer kernels have their spectral 
 band the signals live in, from labels alone.
 
 <p align="center">
-  <img src="1.%20Stages/Stage%201/outputs/7_kernels.png" width="80%" alt="First-layer kernels">
+  <img src="Stages/Stage%201/outputs/7_kernels.png" width="80%" alt="First-layer kernels">
   <br><em>The learned template bank. Band-limited chirp snippets — a 31 ms window can't hold a whole sweep, so the bank covers the band collectively.</em>
 </p>
 
@@ -320,7 +320,7 @@ nearly all of the operating range:
 | 18–20 | 0.029 | **0.999** |
 
 <p align="center">
-  <img src="1.%20Stages/Stage%202/outputs/6_eval.png" width="90%" alt="Stage 2 three-arm evaluation">
+  <img src="Stages/Stage%202/outputs/6_eval.png" width="90%" alt="Stage 2 three-arm evaluation">
 </p>
 
 **Retraining doesn't shave the false-alarm rate — it re-opens a regime the glitches had closed.**
@@ -358,7 +358,7 @@ flipped the eval to green.
 ### 3.5 Stage 4 — the benchmark
 
 <p align="center">
-  <img src="1.%20Stages/Stage%204/outputs/3_eval.png" width="95%" alt="Stage 4 verdict: efficiency at equal FAP, per-class glitch FA, speed">
+  <img src="Stages/Stage%204/outputs/3_eval.png" width="95%" alt="Stage 4 verdict: efficiency at equal FAP, per-class glitch FA, speed">
 </p>
 
 **Front 1 — the theorem's home turf** (efficiency on real-noise injections, FAP 10⁻²): matched
@@ -464,14 +464,14 @@ live on the PC at `~/ligo-data/`) — every stage re-fetches what it needs from 
 dataset is deterministic from its seed (bit-exact rebuild enforced by check).
 
 ```
-1. Stages/
+Stages/
   GW Signal Classifier - Brainstorm.md    ← the plan, and three corrections to it
   Stage 0/  … Stage 4/                    ← note + code + requirements + outputs, per stage
-3. Setup/                                 ← WSL2 + CUDA, and where the docs lie
+Setup/                                    ← WSL2 + CUDA, and where the docs lie
 ```
 
-(`2. Explained/` — my own physics notes, worked out while building this — is deliberately not in
-the repo. The report stands on its own; those are scaffolding.)
+(`Explained/` — my own physics notes, worked out while building this — is deliberately not in the
+repo. The report stands on its own; those are scaffolding.)
 
 Stages 1–4 run **inside WSL2** on a desktop PC (Ryzen 7 3700X / RTX 3070) — not by preference:
 `lalsuite` (which PyCBC needs) ships Linux wheels only, and WSL2 is the only Linux VM with CUDA
@@ -482,7 +482,7 @@ passthrough. Stage 0 is pure `gwpy`/`scipy` and runs on native Windows (pin
 # Ubuntu 26.04 ships Python 3.14; pycbc has no cp314 wheel yet. The 3.13 pin is load-bearing.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv --python 3.13 ~/venvs/ligo && source ~/venvs/ligo/bin/activate
-uv pip install -r "1. Stages/Stage 1/requirements-stage1.txt"
+uv pip install -r "Stages/Stage 1/requirements-stage1.txt"
 
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 # → True NVIDIA GeForce RTX 3070
@@ -490,7 +490,7 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
 
 > ⚠️ **Never install a Linux NVIDIA driver inside WSL2.** It overwrites the Windows driver stubs
 > and breaks the passthrough chain. Driver on **Windows only**; no CUDA toolkit needed (torch's
-> wheels bundle their own runtime). [The full setup story](3.%20Setup/Setup%20-%20Desktop%20PC.md),
+> wheels bundle their own runtime). [The full setup story](Setup/Setup%20-%20Desktop%20PC.md),
 > including the two places the official docs turned out to be wrong.
 
 Run order per stage: the numbered scripts and their paired `*_check.py`, in filename order — each
