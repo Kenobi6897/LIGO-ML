@@ -60,7 +60,7 @@ ignore them?), and finally head-to-head against a proper matched-filtering syste
 standards the field uses. Both sides were tuned to raise the *same number of false alarms* — the
 only honest way to compare two detectors, since anything can look sensitive if you let it cry wolf.
 
-**What came back.** Three answers, and the third is the one that matters.
+**What came back.** Four answers, and the last two are the ones that matter.
 
 1. **In the well-behaved noise the theorem is about, the theorem won — exactly.** The network never
    beat it, anywhere, by any margin. That was the expected outcome, and getting anything else would
@@ -70,16 +70,29 @@ only honest way to compare two detectors, since anything can look sensitive if y
    physicists bolted on an extra hand-designed test that catches glitches. In other words: the fix
    for the theorem's fine print isn't the theorem. It's a patch.
 3. **The network learned its own version of that patch, just from examples** — from about a thousand
-   labelled glitches, no equations — and ended up roughly neck-and-neck with the hand-designed one.
-   It didn't surpass it. But it ran **~20× faster per candidate and ~3,700× faster in bulk**, and it
-   needs no catalogue of expected chirps at all.
+   labelled glitches, no equations — and it ends up **better than the hand-designed one at ignoring
+   glitches** (it gets fooled about half as often), while the hand-designed one stays **better at
+   spotting the faintest real signals**. Honours split. And the network runs **~20× faster per
+   candidate and ~3,700× faster in bulk**, needing no catalogue of expected chirps at all.
+4. **The preprocessing was doing more of the work than the network was.** Fed the detector's raw
+   output with no cleanup, the identical network learns *nothing* — it is a coin flip, and it never
+   fires on a real signal at any loudness. The cleanup step isn't housekeeping; it's what makes the
+   signal exist as far as the network is concerned. (Discovering that also turned up a bug that had
+   been quietly hobbling the network in every previous stage — see below. Fixing it is what moved
+   the network ahead of the hand-designed patch in point 3.)
 
 **Why anyone should care.** When a real merger happens, telescopes around the world want to swing
 toward it *while the light from the aftermath is still arriving* — a race measured in seconds. That
 is the argument for learned detectors: not that they're smarter than the century of physics behind
-matched filtering, but that they can be nearly as discerning while being thousands of times cheaper
-to run. Matched filtering keeps the crown for the careful, offline analysis. The neural network is
-making a case for the night shift.
+matched filtering, but that they can be nearly as discerning — better, in one respect — while being
+thousands of times cheaper to run. Matched filtering keeps the crown for the careful, offline
+analysis. The neural network is making a case for the night shift.
+
+**And the honest footnote.** The single most valuable thing this project produced was not a result;
+it was a *check that failed*. The network's glitch-rejection score had been depressed for three
+straight stages by a one-line inconsistency nobody had reason to suspect. It was only caught by
+rebuilding a baseline that was already believed to be correct — which is the entire argument for
+building things you think you don't need.
 
 ---
 
