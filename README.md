@@ -467,10 +467,11 @@ dataset is deterministic from its seed (bit-exact rebuild enforced by check).
 1. Stages/
   GW Signal Classifier - Brainstorm.md    ← the plan, and three corrections to it
   Stage 0/  … Stage 4/                    ← note + code + requirements + outputs, per stage
-2. Explained/                             ← the physics, worked out properly
-  Matched filtering explained.md · 1D vs 2D - decision explained.md · Q-transform explained.md
 3. Setup/                                 ← WSL2 + CUDA, and where the docs lie
 ```
+
+(`2. Explained/` — my own physics notes, worked out while building this — is deliberately not in
+the repo. The report stands on its own; those are scaffolding.)
 
 Stages 1–4 run **inside WSL2** on a desktop PC (Ryzen 7 3700X / RTX 3070) — not by preference:
 `lalsuite` (which PyCBC needs) ships Linux wheels only, and WSL2 is the only Linux VM with CUDA
