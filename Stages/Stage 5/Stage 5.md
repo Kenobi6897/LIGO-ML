@@ -194,8 +194,70 @@ on the seed:
 
 This is **not yet a claim that the CNN beats matched filtering.** It is a claim that the
 comparison must be re-run: Stage 4's arms C/D/E/F/O at equal FAP, with D rebuilt. Detection at
-10⁻³ (where F led at every SNR) has *not* been re-measured against F here. That is the
-follow-on, and it is a few hours of compute, not a new experiment.
+10⁻³ (where F led at every SNR) has *not* been re-measured against F here.
+
+---
+
+## 4b. Stage 4, re-run — `stage5_rerun_stage4.py`
+
+Same protocol, same thresholds, same MF scores (arms E/F/O are CNN-independent and were reused
+verbatim from `stage4_scores.h5`). The only change is arm **D+**: the identical model with the
+clip applied to both sources, reported across **4 seeds**, because a claim that flips a published
+verdict rides on the *worst* seed and not the best one.
+
+**One more asymmetry surfaced while wiring it up:** `stage4_mf.py:173` clips its *own* inputs at
+±20σ. The matched filter always saw saturated crops. **Stage 4 was comparing a correctly-conditioned
+MF against a gain-crushed CNN** — the bug was one-sided, and it favoured the baseline.
+
+### Front 2 — glitch rejection: the verdict flips
+
+| arm | @10⁻² | @10⁻³ |
+|---|---|---|
+| E — MF max-ρ | 0.582 | 0.116 |
+| C — CNN glitch-naive | 0.331 | 0.159 |
+| D — CNN glitch-trained | 0.166 | 0.050 |
+| F — MF + χ² veto | 0.100 | 0.047 |
+| **D+ — CNN, clip fixed** | **0.058 ± 0.022** (worst seed 0.084) | **0.026 ± 0.013** (worst seed 0.042) |
+
+**D+ beats F at both thresholds, on every seed.** And the per-class story is no longer the
+"complementarity" Stage 4 reported — it is dominance: the two classes Stage 3 named as the
+blind spot go to **zero**.
+
+| class | D | **D+** | F |
+|---|---|---|---|
+| Koi_Fish @10⁻² | 0.347 | **0.000** | 0.000 |
+| Extremely_Loud @10⁻² | 0.455 | **0.000** | 0.255 |
+| Repeating_Blips @10⁻² | 0.450 | **0.050** | 0.300 |
+| Whistle @10⁻² | 0.262 | **0.071** | 0.155 |
+
+### Front 1 — detection: F keeps it
+
+The fix did **not** hand the CNN everything. At FAP 10⁻³ the veto-armed MF still leads at every SNR:
+
+| SNR | D | **D+** | **F** |
+|---|---|---|---|
+| 6–8 | 0.658 | 0.801 | **0.850** |
+| 8–10 | 0.949 | 0.971 | **0.989** |
+| 10–12 | 0.985 | 0.988 | **0.994** |
+
+D+ closed most of the gap (0.658 → 0.801 at SNR 6–8) but did not cross it. **Matched filtering
+remains the better detector of faint signals; the CNN is now the better rejector of glitches.**
+
+### The theorem is intact
+
+The pre-registered fraud alarm — *no CNN may beat the true-parameter oracle on the quasi-Gaussian
+bulk* — still reads **+0.000** with D+ in the arena. The clip fix removed a bug; it did not break
+Neyman–Pearson. That is exactly what a real fix should look like, and it is the strongest evidence
+that D+ is a corrected detector rather than a leaking one.
+
+### The corrected verdict
+
+> Stage 4 concluded: *"on glitch rejection the veto-armed MF edges the glitch-trained CNN, and a
+> well-engineered classical statistic already captures most of the learnable gap."* **The first
+> half was an artefact of the bug.** Corrected: the CNN **surpasses** the χ² veto at glitch
+> rejection (0.058 vs 0.100 @10⁻², every seed) while **remaining behind it** at faint-signal
+> detection (0.801 vs 0.850 @10⁻³). Honours split, and the compute margin (~20× latency,
+> ~3,700× throughput) is unchanged and still the CNN's.
 
 ---
 
@@ -231,8 +293,10 @@ stage5_data.py             the reader — every arm, both sources, one clip rule
 stage5_train.py            the same CNN, the same recipe, one arm at a time
 stage5_eval.py             the benchmark at equal FAP + the learned-template-bank figure
 stage5_sweep.py            the seed sweep that killed the `bp` claim                 [CAN FAIL]
+stage5_rerun_stage4.py     Stage 4's verdict, re-run with the clip-fixed CNN
 outputs/5_ablation.png     efficiency at equal FAP, and glitch rejection, per arm
 outputs/6_kernels.png      where each arm put its template bank — the mechanism
+outputs/7_stage4_rerun.png the corrected benchmark: D+ vs the chi-squared veto
 ```
 
 Datasets (not in git): `~/ligo-data/stage5_s2.h5` (2.5 GB, 61 min), `stage5_s3.h5` (182 MB,
@@ -257,10 +321,16 @@ bandpass is actively harmful for glitch rejection** (`wh`: 0.842).
 And the real prize was in the control. Rebuilding a baseline you already trust is not
 ceremony — **the control found a bug in Stage 3 that Stage 3's own checks could not see**,
 because every Stage 3 check compared arm D against arm C, and *both* were reading Stage 2's
-rows unclipped. It took an arm from outside that frame to notice. One line of read-time
-consistency cuts glitch false alarms 7×, improves weak-signal efficiency, moves 16/16 kernels
-into the band — and puts the CNN ahead of the χ²-vetoed matched filter on the metric Stage 4
-built itself to settle.
+rows unclipped. Stage 4's checks couldn't see it either: they asked "does D beat F?", and the
+bug was in the substrate D stood on — while the MF, which clips its own inputs, stood on solid
+ground. Every question either stage asked was a *relative* one. **It took an arm from outside
+the frame — one built expecting to fail, and it did.**
+
+One line of read-time consistency cuts glitch false alarms 7×, improves weak-signal efficiency,
+moves 16/16 kernels into the band, and overturns the verdict Stage 4 was built to settle: the
+CNN passes the χ²-vetoed matched filter at glitch rejection, on every seed, at both thresholds —
+while still losing to it on faint-signal detection, and while still never beating the oracle on
+the bulk. Nothing broke. A bug came out.
 
 **The strongest checks are the ones physics writes for you. The second strongest are the ones
 a fresh arm writes for your control.**

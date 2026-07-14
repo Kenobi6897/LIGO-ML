@@ -103,7 +103,9 @@ A 251k-parameter 1D CNN was trained on synthetic binary-black-hole injections
 (Stage 1: test AUC **0.9877**), then in 29.7 h of real O3a H1 strain (Stage 2), then with 1,851
 labelled Gravity Spy glitches as hard negatives (Stage 3). Stage 4 built a PyCBC-style
 matched-filter baseline — a 62-template stochastic bank at minimal match 0.97, with and without
-the χ² signal-consistency veto — and compared all arms at equal false-alarm probability.
+the χ² signal-consistency veto — and compared all arms at equal false-alarm probability. Stage 5
+ablated the conditioning pipeline itself, and in doing so found a bug that had depressed the CNN
+in every prior stage; Stage 4's verdict is reported below **after** that fix.
 
 **Findings.** (1) Transferring the Gaussian-trained CNN to real noise barely moves its AUC
 (−0.017) but multiplies false alarms **52×** at FAP 10⁻³ — the damage lives entirely in the
@@ -112,18 +114,28 @@ glitch-free stretches, plus ~28 glitches/hour. (2) Retraining the identical arch
 noise re-opens the deep-threshold regime (efficiency 0.008 → 0.957 at SNR 8–10 @ FAP 10⁻³) — the
 Gaussian/real gap is **learnable structure**, not irreducible randomness. (3) Where the optimality
 theorem applies (quasi-Gaussian bulk, FAP 10⁻²), it held to the decimal: no CNN beat the
-true-parameter oracle anywhere (measured gap +0.000). (4) *Naked* max-SNR matched filtering
-collapsed on real data — functionally blind at FAP 10⁻³, firing on 58% of glitches — and was
-rescued only by the χ² veto, an engineered response to the same assumption failure the CNN
-learned from data: on glitch rejection the veto-armed MF edges the glitch-trained CNN **0.100 vs
-0.166** @ FAP 10⁻² and they effectively tie at 10⁻³ (**0.047 vs 0.050**). (5) The CNN's decisive
+true-parameter oracle anywhere (measured gap **+0.000**, and still +0.000 after the Stage 5 fix).
+(4) *Naked* max-SNR matched filtering collapsed on real data — functionally blind at FAP 10⁻³,
+firing on 58% of glitches — and was rescued only by the χ² veto, an engineered response to the same
+assumption failure the CNN learned from data. **The two then split the fronts:** on glitch
+rejection the CNN beats the veto-armed MF, **0.058 ± 0.022 vs 0.100** @ FAP 10⁻² and
+**0.026 ± 0.013 vs 0.047** @ 10⁻³ (every seed, both thresholds); on deep-threshold *detection* the
+veto-armed MF still leads at every SNR (0.850 vs 0.801 at SNR 6–8 @ 10⁻³). (5) The CNN's decisive
 win is cost: **~20× lower latency and ~3,700× higher throughput** than the bank, on respectable
 hardware both sides.
 
-**Conclusion.** The theorem holds at home; on real noise the engineered veto — not raw optimality
-— is what keeps matched filtering alive, and a small CNN can learn an equivalent veto from ~1,000
-labelled specimens while running three orders of magnitude faster. That combination — near-parity
-robustness at a fraction of the compute — is precisely why the field cares about learned
+(6) Ablating the conditioner shows how much of that is *given*, not learned: fed **raw strain**, the
+identical CNN trains to **AUC 0.4997** — a coin flip, 0.000 efficiency in every SNR bin — and parks
+**1 of 16** first-layer kernels in the analysis band (random init: ~6/16). At equal physical SNR a
+chirp is **1.6×10⁻⁴** of a raw crop and **0.30** of a conditioned one; whitening does not clean the
+signal up, it deletes the variance that isn't it. The bandpass carries the ablation (bandpass-only
+≈ full), while whitening *without* a band limit is catastrophic for glitch rejection (0.842).
+
+**Conclusion.** The theorem holds at home; on real noise the engineered veto — not raw optimality —
+is what keeps matched filtering alive. A small CNN learns an equivalent veto from ~1,000 labelled
+specimens, and once it is not fighting a preprocessing bug it **overtakes the engineered statistic
+at glitch rejection while remaining behind it at deep-threshold detection** — honours split, at
+three orders of magnitude less compute. That is precisely why the field cares about learned
 detectors for low-latency alerts, with matched filtering remaining the offline gold standard.
 
 ---
@@ -136,7 +148,8 @@ detectors for low-latency alerts, with matched filtering remaining the offline g
 | **1** ✅ | 100k injections into **simulated** design noise → 1D CNN | **Test AUC 0.9877** (251k params, ~1 min to train). Fires on real GW150914 above all 112 off-source background segments. |
 | **2** ✅ | Same, but into **29.7 h of real O3a noise** | AUC −0.017 — but **false alarms/hour ×52** at FAP 10⁻³. Retraining re-opens the regime (0.008 → 0.957 at SNR 8–10). |
 | **3** ✅ | Add **Gravity Spy glitches** as labelled hard negatives | Glitch false alarms **halved** @10⁻² (0.331 → 0.166), **cut 3×** @10⁻³ (0.159 → 0.050) — and detection *improved* (AUC 0.9791 → 0.9839). |
-| **4** ✅ | **Matched-filter baseline**, compared at equal FAP | Theorem holds on the bulk (no CNN beats the oracle, gap +0.000). Naked MF blind at 10⁻³; the **χ² veto** rescues it and narrowly wins glitch rejection. CNN wins speed: **~20× latency, ~3,700× throughput**. |
+| **4** ✅ | **Matched-filter baseline**, compared at equal FAP | Theorem holds on the bulk (no CNN beats the oracle, gap +0.000). Naked MF blind at 10⁻³; the **χ² veto** rescues it. CNN wins speed: **~20× latency, ~3,700× throughput**. *Verdict re-run after Stage 5 — see below.* |
+| **5** ✅ | **Ablate the conditioner**: raw / bandpass-only / whiten-only vs full | Raw strain → **AUC 0.4997**, a coin flip; kernels collapse onto the seismic wall (**1/16** in band). And the control found a bug: Stage 3's ±20σ clip reached only **4.9% of the training rows**. Fixing it cuts glitch FA **7×** (0.166 → 0.024) *and* improves detection — flipping Stage 4's glitch verdict. |
 
 ---
 
@@ -157,12 +170,13 @@ gap that the Gaussian assumption opens in matched filtering — and at what comp
 
 The design discipline throughout: **one variable per stage.** Same waveform family, same SNR range,
 same architecture, same conditioning contract — only the noise (Stage 2), then the negatives
-(Stage 3), then the detector itself (Stage 4) change.
+(Stage 3), then the detector itself (Stage 4), then finally the *conditioning contract* itself
+(Stage 5) change.
 
 Each stage is written up in full — including dead ends and bugs — in its own note beside its code:
 [Stage 0](Stages/Stage%200/Stage%200.md) · [Stage 1](Stages/Stage%201/Stage%201.md) ·
 [Stage 2](Stages/Stage%202/Stage%202.md) · [Stage 3](Stages/Stage%203/Stage%203.md) ·
-[Stage 4](Stages/Stage%204/Stage%204.md).
+[Stage 4](Stages/Stage%204/Stage%204.md) · [Stage 5](Stages/Stage%205/Stage%205.md).
 
 ## 2. Methods
 
@@ -365,8 +379,15 @@ amplitude, so under BCE the only way to afford confidently-wrong 6,000σ negativ
 the network's *overall gain* until every logit fits in ±7 — glitch rejection learned, weak-signal
 sensitivity destroyed (SNR 6–8 efficiency 0.89 → 0.37, while val AUC still "passed"). The fix —
 **saturate crops at ±20σ at read time** (the physical analogue is sensor saturation; a rail at
-20σ is still unmistakably a glitch) — is a no-op for every Stage 2 crop and every injection, and
-flipped the eval to green.
+20σ is still unmistakably a glitch) — flipped the eval to green.
+
+> ⚠️ **The fix was right; its reach was not.** The clip lives in `Stage3Dataset` and *not* in
+> `Stage2Dataset` — which supplies **79,913 of the 83,993 training rows**. It therefore reached
+> **4.9%** of the training data, and `stage2.h5` turns out to hold crops up to **6,177σ** (this
+> section's claim that the clip "is a no-op for every Stage 2 crop" is the error: it is a no-op for
+> 99.78% of them, and the other 0.22% are the ~28 unlabelled glitches/hour Stage 2 itself measured).
+> The gain-crush therefore never stopped. [Stage 5](Stages/Stage%205/Stage%205.md) found it, and
+> §3.6 reports what the whole project looks like once it is fixed.
 
 ### 3.5 Stage 4 — the benchmark
 
@@ -393,16 +414,30 @@ theorem's fine print was always "Gaussian noise"; on real data **the veto is loa
 |---|---|---|
 | E — MF max-ρ | 0.582 | 0.116 |
 | C — CNN glitch-naive | 0.331 | 0.159 |
-| D — CNN glitch-trained | 0.166 | 0.050 |
-| **F — MF + χ² veto** | **0.100** | **0.047** |
+| D — CNN glitch-trained *(as published)* | 0.166 | 0.050 |
+| F — MF + χ² veto | 0.100 | 0.047 |
+| **D+ — CNN, Stage 5 clip fix** | **0.058 ± 0.022** | **0.026 ± 0.013** |
 
 Naked MF is the strawman the plan warned against — it fires on **100% of Koi_Fish and Tomte** at
-10⁻². The honest fight is D vs F: **F wins narrowly** overall (a dead heat at 10⁻³), with real
-per-class complementarity — the χ² annihilates Koi_Fish (0.000 @10⁻³ vs D's 0.102: loud-and-
-mismatched is its home case) while D handles Extremely_Loud better (0.109 vs 0.145) and they tie
-on Whistle. Read it plainly: **from 1,020 labelled specimens the CNN learned, by gradient descent,
-approximately what the χ² veto encodes analytically** — it beat naked MF everywhere but did not
-surpass the engineered statistic.
+10⁻². The honest fight is D vs F, and **it was fought with the CNN's hand tied**: arm D was still
+carrying the §3.4 gain-crush, because the clip that fixes it never reached the Stage 2 rows —
+while `stage4_mf.py` clips its *own* inputs (`stage4_mf.py:173`), so the matched filter always
+saw saturated crops. The comparison was correctly-conditioned MF against a gain-crushed CNN.
+
+**Re-run with that fixed** ([Stage 5](Stages/Stage%205/Stage%205.md), same protocol, same MF
+scores, 4 seeds): **D+ beats F on glitch rejection at both thresholds, on every seed** — 0.058 ±
+0.022 vs 0.100 @10⁻² (worst seed 0.084), 0.026 ± 0.013 vs 0.047 @10⁻³ (worst seed 0.042). The
+per-class picture is no longer complementary but *dominant*: D+ takes **Koi_Fish and
+Extremely_Loud to 0.000** at both thresholds — the two classes §3.4 named as the blind spot.
+
+But **F keeps detection.** At FAP 10⁻³ the veto-armed MF still leads at every SNR (0.850 vs D+'s
+0.801 at SNR 6–8; 0.989 vs 0.971 at 8–10), and the fraud alarm still reads **+0.000** — no CNN
+beats the oracle on the bulk. The fix did not break the theorem; it removed a bug.
+
+Read it plainly: **from 1,020 labelled specimens the CNN learned, by gradient descent, something
+strictly better than what the χ² veto encodes analytically — at rejecting glitches. It is still
+the worse detector of faint signals.** Honours split, and the earlier "did not surpass the
+engineered statistic" was measuring a bug, not a ceiling.
 
 **Front 3 — speed.** Same crops, respectable hardware on both sides (3700X × 16 threads for MF,
 RTX 3070 for the CNN, single-core CPU numbers reported for honesty):
@@ -415,23 +450,88 @@ RTX 3070 for the CNN, single-core CPU numbers reported for honesty):
 ~20× latency, ~3,700× throughput — and the CNN needs no template bank, no χ² binning, and no
 per-block re-conditioning at inference.
 
+### 3.6 Stage 5 — the ablation, and the bug in the control
+
+<p align="center">
+  <img src="Stages/Stage%205/outputs/6_kernels.png" width="95%" alt="First-layer kernels per arm: raw collapses onto the seismic wall">
+  <br><em>Where each arm put its learned template bank. Feed the network raw strain and all 16 kernels pile onto the seismic wall below 30 Hz — 1/16 in band, below random init's ~6/16.</em>
+</p>
+
+The obvious ablation, never run: **what if we skip the conditioning?** Four arms, one variable —
+`raw` (crop only), `bp` (bandpass only), `wh` (whiten only), `full` (the control). Same strain,
+same blocks, same injections at the same *physical* SNR, same architecture, same seed. Fairness was
+closed before the run: each arm gets its own global scale (no arm is fed 10⁻¹⁹), injections are
+placed *upstream* of the conditioner, all four operators pass Stage 2's leak test at **~2.4×10⁻¹⁶**,
+and the datasets re-derive Stage 2's and Stage 3's exact rows bit-exactly (**max|Δ| = 0.0**).
+
+| arm | AUC | kernels in band | glitch FA @10⁻² | eff. SNR 6–8 @10⁻³ |
+|---|---|---|---|---|
+| full (control) | 0.9839 | 13/16 | 0.166 | 0.658 |
+| wh | 0.9793 | 15/16 | **0.842** | 0.503 |
+| bp | 0.9829 | 12/16 | 0.048 | 0.727 |
+| **raw** | **0.4997** | **1/16** | 0.600 | **0.000** |
+
+**Raw strain is not a harder problem — it is an impossible one.** Loss sat at 0.692 = ln 2 and never
+moved; efficiency is 0.000 in every SNR bin at every FAP, *including SNR 20*. It never fires on a
+signal. Disabling the clip changes nothing (0.5000), and float32 storage was ruled out in advance
+(the waveform survives with ~10⁻⁴ relative error). The mechanism is the figure above, plus one
+ratio: at equal physical SNR a chirp is **1.6×10⁻⁴ of a raw crop and 0.30 of a conditioned one**.
+Whitening doesn't clean the signal up — **it deletes the variance that isn't the signal**. What raw
+*did* learn is loudness, which is why it fires on **60% of glitches** while detecting nothing: a
+loudness detector is exactly a glitch detector and exactly not a chirp detector.
+
+The ladder localises the credit: **the bandpass carries it** (`bp` ≈ `full` — once the wall is gone,
+the residual in-band colour is mild enough that conv1 learns its own equaliser, which is
+[§2.4](#24-the-model)'s "a 1D convolution *is* a matched filter" seen from the other side), while
+**whitening without a band limit is actively harmful** (`wh`: 0.842 glitch FA, worst non-raw arm by
+17×). A one-seed run had `bp` beating `full` 3.5× on glitches; a 4-seed sweep found the arms
+overlap at 0.8 pooled sd and **killed the claim**.
+
+**And then the control failed.** Rebuilt from scratch, it scored glitch FA 0.058 — not the published
+0.166. The difference was one line: this stage's reader clips *both* sources, Stage 3's clips only
+its own, and Stage 2 supplies 95% of the training mix (§3.4's warning box). Applying Stage 3's own
+fix to all of the data — no new data, no new architecture — moves **every metric at once**, the
+signature of a bug removed rather than a trade-off made:
+
+| | arm D (as published) | **D+ (clip fix)** |
+|---|---|---|
+| stage2-test AUC | 0.9839 | **0.9861** |
+| kernels in band | 13/16 | **16/16** |
+| FA/h @10⁻² | 52.8 | **29.1** |
+| efficiency SNR 6–8 @10⁻³ | 0.658 | **0.801** |
+| ALL GLITCHES @10⁻² | 0.166 | **0.024** *(4-seed: 0.058 ± 0.022)* |
+| Extremely_Loud / Koi_Fish @10⁻² | 0.455 / 0.347 | **0.000 / 0.000** |
+
+Every Stage 3 check compared arm D against arm C — and **both were reading Stage 2's rows
+unclipped**, so no check inside that frame could see it. It took an arm from outside the frame.
+*The strongest checks are the ones physics writes for you; the second strongest are the ones a
+fresh arm writes for your control.*
+
 ## 4. Discussion
 
 The result set reads as a referee's card for matched filtering's two assumptions:
 
 1. **Gaussianity.** Where it holds (the bulk, FAP 10⁻²), the theorem held *to the decimal* —
-   nothing beat the oracle, anywhere. Where it fails (deep thresholds, glitch-rich data), naked
-   matched filtering didn't degrade gracefully — it **collapsed** — and was rescued by the χ²
-   veto, which is itself an engineered patch for the assumption failing. The CNN learned an
-   equivalent patch from data alone and finished within noise of the engineered one on glitch
-   rejection. That is the project's thesis, demonstrated and bounded: *the gap MF's theorem leaves
-   on real noise is learnable structure — but a well-engineered classical statistic already
-   captures most of it.*
+   nothing beat the oracle, anywhere, before or after the Stage 5 fix (+0.000 both times). Where it
+   fails (deep thresholds, glitch-rich data), naked matched filtering didn't degrade gracefully — it
+   **collapsed** — and was rescued by the χ² veto, which is itself an engineered patch for the
+   assumption failing. The CNN learned an equivalent patch from data alone, and once it was not
+   fighting a preprocessing bug it **surpassed** the engineered one at glitch rejection (0.058 ±
+   0.022 vs 0.100) while remaining **behind** it at faint-signal detection (0.801 vs 0.850 at SNR
+   6–8 @10⁻³). The thesis, demonstrated and now properly bounded: *the gap MF's theorem leaves on
+   real noise is learnable structure — and a CNN can learn more of it than the classical statistic
+   captures, without inheriting the classical statistic's sensitivity.*
 2. **Template coverage.** Deliberately untested: every injection came from the family the bank
    covers (FF ≥ 0.97). The CNN's generalization edge, if any, lives outside this benchmark.
 3. **The practical margin is compute**, and it is enormous. A 251k-parameter model at 0.5 ms/crop
-   with near-veto-grade glitch rejection is exactly the trade that makes learned detectors
-   attractive for low-latency alerts — with the template bank remaining the offline gold standard.
+   with *better-than-veto-grade* glitch rejection is exactly the trade that makes learned detectors
+   attractive for low-latency alerts — with the template bank remaining the offline gold standard,
+   on the strength of its faint-signal sensitivity rather than its robustness.
+4. **How much was given, not learned.** Stage 5's raw arm (AUC 0.4997) is the boundary of the
+   claim: none of this is end-to-end learning from a detector. The conditioning pipeline is doing
+   load-bearing work — specifically the *bandpass*, since a CNN handed a band-limited input learns
+   its own in-band whitener but cannot learn one for four decades of seismic wall with a fixed
+   64-tap kernel. Every "the network learned X" in this report presupposes that pipeline.
 
 Against the reference literature: Stage 1 lands in the Gabbard et al. (2018) ballpark (efficiency
 collapse in the same SNR ≲ 8 regime, below the known-signal ceiling everywhere), and the project
@@ -463,10 +563,16 @@ fail, none by inspection — the project's stated failure mode is a silent wrong
 | 6,000σ glitches crushing the CNN's gain under BCE | weak-signal sensitivity | efficiency regression on the frozen Stage 2 split |
 | Flat-metric correlation on bandlimited noise | every MF threshold (1.7× miscalibration) | noise-quadrature std check |
 | Pooled variance calibration vs one loud glitch | 5% of MF efficiency, uniformly | the oracle tell (CNN "beating" the oracle by +0.054) |
+| **…and the fix for that gain-crush reached only 4.9% of the training rows** (`Stage3Dataset` clips, `Stage2Dataset` doesn't — and Stage 2 is 95% of the mix, with crops to 6,177σ) | **Stage 3's *and* Stage 4's headline results — glitch FA 7× too high, and MF handed a win it hadn't earned** | **rebuilding the control from scratch in Stage 5** — no check *inside* Stages 3–4 could see it, because every one of them compared two arms that shared the bug |
 
-The last one deserves a sentence: the eval's pre-registered theorem-tell — *a CNN beating the
-oracle means a bug* — is what caught the final calibration error after the dedicated check had
-passed. **The strongest checks are the ones physics writes for you.**
+Two of these deserve a sentence. The **oracle tell** — *a CNN beating the oracle means a bug* — is
+what caught the MF calibration error after the dedicated check had already passed: the strongest
+checks are the ones physics writes for you. And the **last row is the project's sharpest lesson**,
+because it is the one no check caught for three stages. Stage 3 asked "does D beat C?", Stage 4
+asked "does D beat F?" — both are *relative* questions, and the bug was in the shared substrate
+both arms stood on. It took building a detector that had no reason to exist (a raw-strain ablation,
+expected to fail, and it did) to expose it. **A baseline you already trust is exactly the one worth
+rebuilding.**
 
 ## 6. Reproducibility
 
@@ -479,14 +585,14 @@ dataset is deterministic from its seed (bit-exact rebuild enforced by check).
 ```
 Stages/
   GW Signal Classifier - Brainstorm.md    ← the plan, and three corrections to it
-  Stage 0/  … Stage 4/                    ← note + code + requirements + outputs, per stage
+  Stage 0/  … Stage 5/                    ← note + code + requirements + outputs, per stage
 Setup/                                    ← WSL2 + CUDA, and where the docs lie
 ```
 
 (`Explained/` — my own physics notes, worked out while building this — is deliberately not in the
 repo. The report stands on its own; those are scaffolding.)
 
-Stages 1–4 run **inside WSL2** on a desktop PC (Ryzen 7 3700X / RTX 3070) — not by preference:
+Stages 1–5 run **inside WSL2** on a desktop PC (Ryzen 7 3700X / RTX 3070) — not by preference:
 `lalsuite` (which PyCBC needs) ships Linux wheels only, and WSL2 is the only Linux VM with CUDA
 passthrough. Stage 0 is pure `gwpy`/`scipy` and runs on native Windows (pin
 `igwn-segments==2.0.0` — the newer release is source-only and dies without MSVC).
