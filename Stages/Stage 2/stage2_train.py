@@ -18,7 +18,7 @@ Expectations, so a surprise is recognisable as one:
 
 Run (from WSL2, ~1 min on the 3070):
     source ~/venvs/ligo/bin/activate
-    cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 2"
+    cd "/mnt/c/Users/locke/Documents/LIGO-ML/Stages/Stage 2"
     python stage2_train.py                  # the real thing
     python stage2_train.py --epochs 1       # smoke test
 """

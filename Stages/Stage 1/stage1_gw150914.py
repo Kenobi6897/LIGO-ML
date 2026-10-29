@@ -33,7 +33,7 @@ afterwards, where .gitignore keeps it out of the vault).
 
 Run (from WSL2, after stage1_train.py):
     source ~/venvs/ligo/bin/activate
-    cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 1"
+    cd "/mnt/c/Users/locke/Documents/LIGO-ML/Stages/Stage 1"
     python stage1_gw150914.py
 """
 

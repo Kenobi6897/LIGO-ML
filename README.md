@@ -5,6 +5,24 @@ gravitational-wave signals out of LIGO strain data, then benchmark it against **
 filtering** — the method the field actually uses — *at equal false-alarm rate*, on real detector
 noise, with a labelled glitch population in the arena.
 
+> **TL;DR.** A 251k-parameter 1D CNN vs a PyCBC-style matched-filter bank, on 29.7 h of real
+> LIGO O3a noise plus 1,851 labelled glitches, every method scored at **equal false-alarm
+> probability**.
+> - **Where the optimality theorem applies, it held.** No CNN beat the true-template oracle
+>   (gap +0.000).
+> - **On glitches, the CNN won.** Its false-alarm fraction was **0.058 ± 0.022** vs **0.100** for
+>   matched filtering with the χ² veto (FAP 10⁻², 4 seeds, worst seed still ahead).
+> - **On the faintest signals, matched filtering won**: 0.850 vs 0.801 efficiency at SNR 6–8, FAP 10⁻³.
+> - **On cost, the CNN won by orders of magnitude**: ~20× lower latency, ~3,700× higher throughput.
+> - **Boundary:** fed raw, unconditioned strain, the same CNN is a coin flip (AUC 0.4997).
+> - **Most useful finding:** a preprocessing bug that had skewed three stages, caught only by
+>   rebuilding a trusted baseline ([§3.6](#36-stage-5--the-ablation-and-the-bug-in-the-control)).
+
+<p align="center">
+  <img src="Stages/Stage%205/outputs/7_stage4_rerun.png" width="95%" alt="Final verdict: detection efficiency at FAP 1e-3, and per-class glitch false alarms, for each arm"><br>
+  <em>The final verdict. Left: the χ²-vetoed matched filter (green) keeps a narrow lead at the faint end. Right: the clip-fixed CNN (purple) is fooled by fewer glitches in most classes.</em>
+</p>
+
 The interesting part was never beating matched filtering. **You can't** — for a known waveform in
 Gaussian noise, matched filtering is provably optimal (Neyman–Pearson), so a CNN that beats it
 there has a bug, not a breakthrough. The interesting part is what happens when you leave that
@@ -586,7 +604,10 @@ dataset is deterministic from its seed (bit-exact rebuild enforced by check).
 Stages/
   GW Signal Classifier - Brainstorm.md    ← the plan, and three corrections to it
   Stage 0/  … Stage 5/                    ← note + code + requirements + outputs, per stage
-Setup/                                    ← WSL2 + CUDA, and where the docs lie
+Setup/
+  Setup - Desktop PC.md                   ← WSL2 + CUDA, and where the docs lie
+  Picking It Back Up.md                   ← re-entry checklist + open follow-on threads
+CLAUDE.md                                 ← working conventions for the AI coding assistant
 ```
 
 (`Explained/` — my own physics notes, worked out while building this — is deliberately not in the
@@ -615,9 +636,23 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
 Run order per stage: the numbered scripts and their paired `*_check.py`, in filename order — each
 stage note lists them. **The check scripts are not optional** (see §5).
 
+## How this was built
+
+I wrote the code with [Claude Code](https://claude.com/claude-code) as a pair programmer; the
+repo's `CLAUDE.md` is the brief it worked from. The research question, the one-variable-per-stage
+design, the choice of checks and the reading of every result are mine. I've written that down
+because it matters for how you read §5: an AI assistant is fast, and its failure mode is the same
+as this project's, a plausible number instead of a crash. The checks that can fail are what made
+the speed safe to use.
+
 ## References
 
 - **Gabbard et al. 2018** — [*Matching Matched Filtering with Deep Learning*](https://arxiv.org/abs/1712.06041) — the Stage 1 target.
 - **George & Huerta 2018** — [*Deep Learning for Real-time Gravitational Wave Detection*](https://arxiv.org/abs/1701.00008)
 - **Glanzer et al.** — Gravity Spy ML classifications, [Zenodo 5649212](https://zenodo.org/records/5649212)
 - [GWOSC](https://gwosc.org) · [gwpy](https://gwpy.github.io) · [PyCBC](https://pycbc.org) · [Gravity Spy](https://gravityspy.org)
+
+## License
+
+[MIT](LICENSE). The LIGO strain data is public from [GWOSC](https://gwosc.org) under its own
+terms; the Gravity Spy labels are from [Zenodo 5649212](https://zenodo.org/records/5649212).

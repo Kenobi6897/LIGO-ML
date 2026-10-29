@@ -15,6 +15,15 @@ template bank); the GPU only reprises the CNN forward passes
 (its glitch test set + both CNN checkpoints)
 **Previous:** [[Stage 3]] ✅
 
+> [!warning] Glitch verdict superseded by [[Stage 5]]
+> This note's conclusion that the χ²-vetoed MF (arm F) edges the glitch-trained CNN (0.100 vs
+> 0.166 @1e-2) was scored against a CNN still carrying the gain-crush bug: Stage 3's ±20σ clip
+> reached only 4.9% of arm D's training rows, while `stage4_mf.py` clipped its own inputs. Re-run
+> with the fix (arm D+, 4 seeds), the CNN **beats** F at glitch rejection — 0.058 ± 0.022 vs 0.100
+> @1e-2, 0.026 ± 0.013 vs 0.047 @1e-3 — and F still leads on faint-signal detection at 1e-3.
+> See [[Stage 5]] §4b. Everything else here stands: the theorem holding at home, naked MF's
+> collapse, the veto's rescue, and the speed numbers.
+
 > **The goal:** the fight the whole project was built to referee. `pycbc`-style matched
 > filtering vs the CNNs, **compared at equal false-alarm probability** — never at equal
 > accuracy — on three fronts:
@@ -41,10 +50,10 @@ template bank); the GPU only reprises the CNN forward passes
 ### 📁 Where things live
 | | |
 |---|---|
-| **Code** | `1. Stages/Stage 4/` — imports Stages 1–3 modules via `sys.path` |
+| **Code** | `Stages/Stage 4/` — imports Stages 1–3 modules via `sys.path` |
 | **Bank** | `~/ligo-data/stage4_bank.h5` — masses + conditioned reference templates |
 | **Scores** | `~/ligo-data/stage4_scores.h5` — ρ, ρ̃, χ²ᵣ, best template, oracle ρ per row |
-| **Figures** | `1. Stages/Stage 4/outputs/` |
+| **Figures** | `Stages/Stage 4/outputs/` |
 
 ## 2. The build
 
