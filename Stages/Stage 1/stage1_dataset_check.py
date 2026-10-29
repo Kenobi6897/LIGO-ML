@@ -49,7 +49,7 @@ Four properties, each of which can fail. Two are bookkeeping; two are the ones t
 
 Run (from WSL2):
     source ~/venvs/ligo/bin/activate
-    cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 1"
+    cd "/mnt/c/Users/locke/Documents/LIGO-ML/Stages/Stage 1"
     python stage1_dataset_check.py
 """
 

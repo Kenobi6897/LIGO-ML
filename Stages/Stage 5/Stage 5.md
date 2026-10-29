@@ -196,6 +196,9 @@ This is **not yet a claim that the CNN beats matched filtering.** It is a claim 
 comparison must be re-run: Stage 4's arms C/D/E/F/O at equal FAP, with D rebuilt. Detection at
 10⁻³ (where F led at every SNR) has *not* been re-measured against F here.
 
+*(Resolved in §4b, directly below: the re-run was done. D+ beats F at glitch rejection on every
+seed at both thresholds, and F keeps the lead on faint-signal detection.)*
+
 ---
 
 ## 4b. Stage 4, re-run — `stage5_rerun_stage4.py`

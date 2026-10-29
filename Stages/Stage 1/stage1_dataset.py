@@ -62,7 +62,7 @@ unique across all N — a repeated noise realisation split across train and test
 
 Run (from WSL2, ~10 min on the 3700X):
     source ~/venvs/ligo/bin/activate
-    cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 1"
+    cd "/mnt/c/Users/locke/Documents/LIGO-ML/Stages/Stage 1"
     python stage1_dataset.py                 # the real thing: 100k
     python stage1_dataset.py --n 400 --out /tmp/smoke.h5    # smoke test
 """

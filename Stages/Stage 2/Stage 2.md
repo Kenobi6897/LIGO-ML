@@ -58,7 +58,7 @@ Changing these means re-downloading or regenerating — pin them now.
 ### 📁 Where things live
 | | |
 |---|---|
-| **Code** | `1. Stages/Stage 2/` — in the vault, in git; imports Stage 1's modules via `sys.path` |
+| **Code** | `Stages/Stage 2/` — in the vault, in git; imports Stage 1's modules via `sys.path` |
 | **Raw strain** | `~/ligo-data/stage2_strain.h5` — ~1.9 GB, blocks of resampled 2048 Hz H1 strain |
 | **Dataset** | `~/ligo-data/stage2.h5` — same schema as `stage1.h5` plus `block_id` / `gps` |
 | **Checkpoint** | `~/ligo-data/stage2_cnn.pt` |
@@ -66,7 +66,7 @@ Changing these means re-downloading or regenerating — pin them now.
 Run everything from WSL2 against the Windows-side vault, per [[Stage 1]]:
 ```bash
 source ~/venvs/ligo/bin/activate
-cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 2"
+cd "/mnt/c/Users/locke/Documents/LIGO-ML/Stages/Stage 2"
 python stage2_fetch.py
 ```
 

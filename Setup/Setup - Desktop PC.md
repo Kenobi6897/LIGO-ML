@@ -121,7 +121,7 @@ can wait for a separate sitting.
       cd $env:USERPROFILE\Documents
       git clone https://github.com/Kenobi6897/LIGO-ML.git
       ```
-      Repo is **private** — expect a GitHub auth prompt. If `gh` is installed, `gh auth login`
+      Repo was **private** at the time (it is public now) — expect a GitHub auth prompt. If `gh` is installed, `gh auth login`
       first and the clone goes through without a browser detour.
       *Done — was already cloned at `Documents\LIGO-ML`. Credential Manager had the auth; no `gh`.*
 
