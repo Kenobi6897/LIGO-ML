@@ -20,7 +20,7 @@ the PC.
 
 Run (from WSL2, ~1 min/epoch, GPU):
     source ~/venvs/ligo/bin/activate
-    cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 1"
+    cd "/mnt/c/Users/locke/Documents/LIGO-ML/Stages/Stage 1"
     python stage1_train.py                  # the real thing
     python stage1_train.py --epochs 1       # smoke test
 """

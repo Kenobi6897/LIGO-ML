@@ -53,7 +53,7 @@ files that cover the most not-yet-capped glitches and fetch only those.
 ### 📁 Where things live
 | | |
 |---|---|
-| **Code** | `1. Stages/Stage 3/` — imports Stage 1 + Stage 2 modules via `sys.path` |
+| **Code** | `Stages/Stage 3/` — imports Stage 1 + Stage 2 modules via `sys.path` |
 | **Glitch table** | `~/ligo-data/gravityspy_H1_O3a.csv` (Zenodo 5649212) |
 | **Selection** | `~/ligo-data/stage3_selection.h5` — chosen glitches + merged spans |
 | **Raw strain** | `~/ligo-data/stage3_strain.h5` — same schema as Stage 2's |

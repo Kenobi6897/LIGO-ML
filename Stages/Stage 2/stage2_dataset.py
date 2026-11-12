@@ -35,7 +35,7 @@ every block, so both classes see identical noise conditions.
 
 Run (from WSL2, ~1 h on the 3700X):
     source ~/venvs/ligo/bin/activate
-    cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 2"
+    cd "/mnt/c/Users/locke/Documents/LIGO-ML/Stages/Stage 2"
     python stage2_dataset.py                                # all complete blocks
     python stage2_dataset.py --blocks 4 --out /tmp/s2sm.h5  # smoke test
 """

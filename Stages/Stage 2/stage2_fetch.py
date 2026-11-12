@@ -34,7 +34,7 @@ bit-exact-rebuild lesson — store what you compute with). ~1.9 GB on ext4, neve
 
 Run (from WSL2; ~30-60 min, network-bound, safe to re-run — skips finished work):
     source ~/venvs/ligo/bin/activate
-    cd "/mnt/c/Users/locke/Documents/LIGO-ML/1. Stages/Stage 2"
+    cd "/mnt/c/Users/locke/Documents/LIGO-ML/Stages/Stage 2"
     python stage2_fetch.py                     # the real thing (~197 data blocks)
     python stage2_fetch.py --blocks 4          # smoke test: 4 data blocks
 """
